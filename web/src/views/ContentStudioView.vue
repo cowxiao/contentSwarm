@@ -396,6 +396,8 @@ const testFormDefaults = {
     audience: ['杭州准备改善型装修的三口之家'],
     pain: ['89㎡空间收纳不足', '厨房动线拥挤', '担心预算失控'],
     advantage: ['设计施工一体化', '节点验收留档', '主材报价透明'],
+    renovation_scene: '改善型毛坯房硬装',
+    quote_type: '项目硬装预算',
     project_type: '三室两厅一卫',
     area: '89㎡',
     budget: '硬装预算18万元',
@@ -415,7 +417,65 @@ const selectedTemplate = computed(() =>
 )
 const selectedIndustrySlug = computed(() => store.template?.slug || selectedTemplate.value?.slug || '')
 const needsContentDirection = computed(() => selectedTemplate.value?.strategy_mode === 'direction_scoped' && !selectedTemplate.value?.blueprint_first)
-const directionOptions = computed(() => (store.ruleBundle?.content_types || []).filter(item => item.enabled !== false && (item.supported_goals || []).includes(creation.content_goal)))
+const selectedIndustryPack = computed(() => (store.bootstrap?.industry_packs || []).find(item => item.slug === selectedIndustrySlug.value && item.status === 'published'))
+const scopedDirectionRules = computed(() => (store.ruleBundle?.combination_rules || []).filter((item) => {
+  const industryScope = item.industry_scope || []
+  const goalScope = item.content_goal_codes || []
+  return item.enabled !== false
+    && (!industryScope.length || industryScope.includes(selectedIndustrySlug.value))
+    && (!goalScope.length || goalScope.includes(creation.content_goal))
+}))
+const scopedDirectionCodes = computed(() => new Set(
+  scopedDirectionRules.value.flatMap(item => item.content_type_codes || [])
+))
+const directionOptions = computed(() => (store.ruleBundle?.content_types || [])
+  .filter(item => item.enabled !== false && (
+    scopedDirectionCodes.value.size
+      ? scopedDirectionCodes.value.has(item.code)
+      : (item.supported_goals || []).includes(creation.content_goal)
+  ))
+  .map(item => ({ ...item, name: selectedIndustryPack.value?.content_type_aliases?.[item.code] || item.name })))
+const contentDirectionCascadeOptions = computed(() => {
+  const topicOptions = []
+  const topicOptionsByName = new Map()
+
+  for (const direction of directionOptions.value) {
+    const rule = scopedDirectionRules.value.find((item) =>
+      (item.content_type_codes || []).includes(direction.code) && item.source_metadata?.topic_type
+    )
+    const topicType = rule?.source_metadata?.topic_type?.trim()
+    const contentType = rule?.source_metadata?.content_direction_name?.trim() || direction.name
+
+    if (!topicType || topicType === contentType) {
+      topicOptions.push({ value: direction.code, label: contentType })
+      continue
+    }
+
+    let topicOption = topicOptionsByName.get(topicType)
+    if (!topicOption) {
+      topicOption = { value: `topic:${topicType}`, label: topicType, children: [] }
+      topicOptionsByName.set(topicType, topicOption)
+      topicOptions.push(topicOption)
+    }
+    topicOption.children.push({ value: direction.code, label: contentType })
+  }
+
+  return topicOptions
+})
+const selectedContentDirectionPath = computed({
+  get: () => {
+    const code = creation.content_type_code
+    if (!code) return undefined
+    for (const option of contentDirectionCascadeOptions.value) {
+      if (option.value === code) return [code]
+      if (option.children?.some((child) => child.value === code)) return [option.value, code]
+    }
+    return undefined
+  },
+  set: (path) => {
+    creation.content_type_code = Array.isArray(path) && path.length ? path[path.length - 1] : undefined
+  }
+})
 const activeFields = computed(() => {
   if (!store.task) {
     if (!selectedTemplate.value) return []
@@ -1940,9 +2000,14 @@ const openVersions = async () => {
             </label>
             <p v-if="selectedTemplate?.blueprint_first" class="auto-strategy-hint">填写资料后，系统自动匹配参考结构与创作方式，无需选择内容方向。</p>
             <label v-if="needsContentDirection" class="field-block">
-              <span>一级内容方向</span>
-              <a-select v-model:value="creation.content_type_code" placeholder="请选择本次内容方向" :options="directionOptions.map(item => ({ value: item.code, label: item.name }))" />
-              <small>仅从所选方向内匹配标题和正文公式。</small>
+              <span>一级内容方向（选题类型）</span>
+              <a-cascader
+                v-model:value="selectedContentDirectionPath"
+                placeholder="请选择选题类型/内容类型"
+                :options="contentDirectionCascadeOptions"
+                expand-trigger="hover"
+              />
+              <small>先选择选题类型；如有内容类型子分类，再选择具体分类。</small>
             </label>
             <p v-else-if="selectedTemplate && !selectedTemplate.blueprint_first">根据本次资料评分选择该行业的公式和创作手法。</p>
           </div>
