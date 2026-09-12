@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from copy import deepcopy
 from typing import Any
 
 from sqlalchemy import select
@@ -30,8 +31,7 @@ from yuxi.content.model.rules.engine import CombinationMatcher, MatchRequest
 from yuxi.content.rules import brief_variable_map, canonical_brief_facts
 from yuxi.content.validation import ComplianceEngine, validate_numeric_evidence_coverage
 from yuxi.content.validators import validate_content
-from yuxi.content.v3.body_calling import SOURCE_METADATA as BODY_CALLING_SOURCE
-from yuxi.content.v3.body_calling import get_decoration_body_calling
+from yuxi.content.v3.body_calling import get_decoration_body_calling, get_decoration_body_calling_source
 from yuxi.content.industry_matrix import resolve_industry_formula
 from yuxi.content.v3.formula_lexicons import get_formula_lexicon_requirements
 from yuxi.services.run_queue_service import append_run_stream_event
@@ -433,6 +433,9 @@ class V3DeterministicNodeHandler:
             delegated_agent_run_id=(state.get("delegated_agent_runs") or {}).get("select_creation_strategy"),
         )
         method_by_code = {item.code: item for item in methods}
+        direction_blueprint = deepcopy(group.source_metadata.get("composition_blueprint"))
+        if context.industry_slug == "decoration" and not direction_blueprint:
+            raise ValueError("装修一级内容方向缺少层级与词组组合")
         body_calling = get_decoration_body_calling(body_formula.code) if context.industry_slug == "decoration" else None
         formula_lexicons = (
             get_formula_lexicon_requirements(title_formula.code, body_formula.code)
@@ -441,6 +444,7 @@ class V3DeterministicNodeHandler:
         )
         # 已导入原文的版本以可编辑规则为准，同时保留词库调用与段落标识。
         if body_calling is not None and body_formula.source_content:
+            body_calling["composition_blueprint"] = deepcopy(direction_blueprint)
             body_calling["sections"] = [
                 {
                     **(
@@ -510,12 +514,17 @@ class V3DeterministicNodeHandler:
                 "compatible_methods": body_formula.compatible_methods or [],
                 "risk_rules": body_formula.risk_rules or [],
                 "body_calling": body_calling,
-                "body_calling_source": BODY_CALLING_SOURCE if body_calling is not None else None,
+                "composition_blueprint": deepcopy(direction_blueprint),
+                "body_calling_source": (
+                    get_decoration_body_calling_source(body_formula.code) if body_calling is not None else None
+                ),
             },
             "rule_version_id": context.rule_version_id,
             "match_snapshot_id": match_snapshot.id,
             "formula_snapshot_id": formula_snapshot.id,
         }
+        if direction_blueprint is not None:
+            strategy_payload["direction_blueprint"] = direction_blueprint
         for section in ("title_formula", "body_formula"):
             strategy_payload[section] = resolve_industry_formula(
                 strategy_payload[section], industry_slug=context.industry_slug, scenario=group.scenario_description

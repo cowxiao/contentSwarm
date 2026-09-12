@@ -71,8 +71,10 @@ class JointStrategyDecisionV1(StrategyContract):
 
 class JointStrategyDecisionV2(JointStrategyDecisionV1):
     price_research_questions: list[str] = Field(
-        description=("报价缺口中可由价格库检索解决的问题；没有报价缺口时填 []。"
-                     "不要把工程量、实际成交价或公开授权伪装成标准单价问题。")
+        description=(
+            "报价缺口中可由价格库检索解决的问题；没有报价缺口时填 []。"
+            "不要把工程量、实际成交价或公开授权伪装成标准单价问题。"
+        )
     )
 
     @model_validator(mode="after")
@@ -171,6 +173,7 @@ class StrategySnapshotV2(StrategyContract):
     industry_slug: str
     strategy_mode: Literal["direction_scoped", "scored"]
     content_direction: str | None
+    direction_blueprint: dict[str, Any] | None = None
     creation_methods: list[str] = Field(min_length=1)
     creation_method_definitions: list[dict[str, Any]] = Field(min_length=1)
     title_formula: dict[str, Any] = Field(min_length=1)
@@ -184,6 +187,8 @@ class StrategySnapshotV2(StrategyContract):
     @model_validator(mode="after")
     def verify_hash(self):
         payload = self.model_dump(mode="json", exclude={"snapshot_hash"})
+        if payload.get("direction_blueprint") is None:
+            payload.pop("direction_blueprint")
         canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         if self.snapshot_hash != hashlib.sha256(canonical.encode()).hexdigest():
             raise ValueError("新策略快照哈希不一致")

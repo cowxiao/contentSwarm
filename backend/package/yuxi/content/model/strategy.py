@@ -143,13 +143,20 @@ def build_strategy_candidates(
                         "title_formula_codes": [entry["code"] for entry in scoped["title_formulas"]],
                         "body_formula_codes": [entry["code"] for entry in scoped["content_formulas"]],
                         "valid_formula_pairs": scoped["valid_formula_pairs"],
+                        "direction_blueprint": scoped.get("direction_blueprint"),
                     }
                 )
+    blueprints = [
+        deepcopy(rule.get("source_metadata", {}).get("composition_blueprint"))
+        for rule in rules
+        if rule.get("source_metadata", {}).get("composition_blueprint")
+    ]
     return {
         **({"auto_direction": True, "direction_options": direction_options} if auto_direction else {}),
         "industry_slug": industry_slug,
         "strategy_mode": mode,
         "direction_code": direction,
+        "direction_blueprint": blueprints[0] if len(blueprints) == 1 else None,
         "rule_version_id": rule_version_id,
         "policy_version": policy["version"],
         "policy_hash": policy["policy_hash"],

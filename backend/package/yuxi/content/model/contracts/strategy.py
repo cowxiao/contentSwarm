@@ -114,6 +114,7 @@ def validate_strategy_decision(
         candidates = {
             **candidates,
             "direction_code": direction["code"],
+            "direction_blueprint": direction.get("direction_blueprint"),
             "valid_formula_pairs": direction["valid_formula_pairs"],
             "title_formulas": [
                 item for item in candidates["title_formulas"] if item["code"] in direction["title_formula_codes"]

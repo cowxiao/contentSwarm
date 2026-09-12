@@ -26,9 +26,7 @@ async def prepare_strategy_candidates(*, db, state, node_run_id):
     del node_run_id
     from yuxi.content.v3.joint_workflow import BLUEPRINT_FIRST_WORKFLOW_IDS
 
-    auto_direction = (
-        state["runtime_config_snapshot"].get("workflow_version_id") in BLUEPRINT_FIRST_WORKFLOW_IDS
-    )
+    auto_direction = state["runtime_config_snapshot"].get("workflow_version_id") in BLUEPRINT_FIRST_WORKFLOW_IDS
     user = (await db.execute(select(User).where(User.uid == state["uid"], User.is_deleted == 0))).scalar_one()
     result = await PostgresStrategyPreviewRepository(db).load_candidates(
         task_id=state["task_id"],
@@ -97,7 +95,7 @@ async def prepare_strategy_candidates(*, db, state, node_run_id):
 async def lock_joint_strategy(*, db, state, node_run_id):
     from yuxi.content.control.workflow.deterministic_node import _available_variable_codes
     from yuxi.content.v3.body_calling import get_decoration_body_calling
-    from yuxi.content.v3.body_calling import SOURCE_METADATA as BODY_CALLING_SOURCE
+    from yuxi.content.v3.body_calling import get_decoration_body_calling_source
     from yuxi.content.v3.formula_lexicons import get_formula_lexicon_requirements
 
     del node_run_id
@@ -122,11 +120,25 @@ async def lock_joint_strategy(*, db, state, node_run_id):
         deepcopy(next(item for item in catalog["methods"] if item["code"] == code))
         for code in decision.creation_method_codes
     ]
+    direction_blueprint = None
+    if decision.industry_slug == "decoration":
+        direction_rules = [
+            item for item in catalog["source_rules"] if decision.direction_code in item.get("content_type_codes", [])
+        ]
+        blueprints = [
+            deepcopy(item.get("source_metadata", {}).get("composition_blueprint"))
+            for item in direction_rules
+            if item.get("source_metadata", {}).get("composition_blueprint")
+        ]
+        if len(direction_rules) != 1 or len(blueprints) != 1:
+            raise ValueError("装修一级内容方向必须且只能绑定一套层级与词组组合")
+        direction_blueprint = blueprints[0]
     if decision.industry_slug == "decoration":
         lexicons = get_formula_lexicon_requirements(title["code"], body["code"])
         title["lexicon_codes"] = [item["code"] for item in lexicons["title"]]
         calling = get_decoration_body_calling(body["code"])
         if calling:
+            calling["composition_blueprint"] = deepcopy(direction_blueprint)
             sections = body.get("structure_schema") or []
             calling["sections"] = [
                 {
@@ -142,9 +154,10 @@ async def lock_joint_strategy(*, db, state, node_run_id):
                 for index, text in enumerate(sections)
             ]
             body["body_calling"] = calling
+            body["composition_blueprint"] = deepcopy(direction_blueprint)
             calling["formula_name"] = body["name"]
             calling["reference_examples"] = body.get("reference_examples") or []
-            body["body_calling_source"] = BODY_CALLING_SOURCE
+            body["body_calling_source"] = get_decoration_body_calling_source(body["code"])
             body["structure_schema"] = [section["name"] for section in calling["sections"]]
     reference_snapshot = None
     viral_collection = {"evidence_items": [], "citations": [], "unresolved_questions": []}
@@ -226,6 +239,8 @@ async def lock_joint_strategy(*, db, state, node_run_id):
         "decision": result.model_dump(mode="json", exclude={"price_research_questions"}),
         "reference_snapshot": reference_snapshot,
     }
+    if direction_blueprint is not None:
+        payload["direction_blueprint"] = direction_blueprint
     canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     payload["snapshot_hash"] = hashlib.sha256(canonical.encode()).hexdigest()
     snapshot = StrategySnapshotV2.model_validate(payload).model_dump(mode="json")

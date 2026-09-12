@@ -412,6 +412,7 @@ class AgentNodeHandler:
                 max_chunks_per_knowledge_base=int(node.get("max_chunks_per_knowledge_base") or 0),
                 max_chars_per_knowledge_chunk=int(node.get("max_chars_per_knowledge_chunk") or 0),
                 prohibited_actions=PROHIBITED_ACTIONS.get(node["id"], ()),
+                model_spec=state.get("model_spec"),
             )
         )
         mapped = AgentNodeResultMapper.to_state(node["id"], delegated.output, state)

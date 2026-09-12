@@ -1063,7 +1063,7 @@ async def test_delegation_creates_traceable_child_run_and_runtime_snapshot(monke
         return agent, FakeBackend()
 
     service._resolve_agent = fake_resolve
-    request = _delegation_request()
+    request = _delegation_request(model_spec="runtime-provider:runtime-model")
 
     result = await service.execute(request)
 
@@ -1077,6 +1077,7 @@ async def test_delegation_creates_traceable_child_run_and_runtime_snapshot(monke
     assert request.node_run.input_snapshot["input_snapshot_hash"] == "input-hash"
     assert request.node_run.delegated_agent_run_id == result.delegated_agent_run_id
     assert result.runtime_config_snapshot["agent"]["config_version"] == 4
+    assert result.runtime_config_snapshot["model"] == "runtime-provider:runtime-model"
     assert result.runtime_config_snapshot["skills"][0]["content_hash"] == "hash-2"
     assert result.runtime_config_snapshot["knowledges"] == []
     assert result.runtime_config_snapshot["tools"] == [

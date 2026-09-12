@@ -73,6 +73,7 @@ class AgentDelegationRequest:
     max_chunks_per_knowledge_base: int = 0
     max_chars_per_knowledge_chunk: int = 0
     prohibited_actions: tuple[str, ...] = ()
+    model_spec: str | None = None
     cancel_event: asyncio.Event | None = field(default=None, compare=False)
 
 
@@ -187,6 +188,8 @@ class AgentDelegationService:
             context_schema=backend.context_schema,
         )
         context.update_from_dict(normalized_config)
+        if request.model_spec:
+            context.model = request.model_spec
         context.thread_id = thread_id
         context.uid = str(request.user.uid)
         context.run_id = child_run_id

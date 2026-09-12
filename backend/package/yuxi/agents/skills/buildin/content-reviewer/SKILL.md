@@ -28,6 +28,15 @@ description: 审核 Yuxi 生成内容的创作手法贯穿、公式执行、事�
 7. `evidence_ids` 可引用当前冻结 EvidenceBundle 中任何真实存在的证据，包括用于核对结构、节奏和 emoji 模式的 `style_reference`；不得引用未知 Evidence ID。
 8. 顶层 `status` 必须与 `checks` 中最严重状态一致：存在 `blocked` 则为 `blocked`，否则存在 `warning` 则为 `warning`，其余为 `passed`。
 
+## 装修工长新版验收
+
+- 策略快照存在 `direction_blueprint` 时，先核对正文可识别信息层是否与 `layer_sequence` 同序且无增删，再核对每层是否满足 `phrase_composition` 的 fixed/all/random、允许词组与组数范围。跨方向词组、项目单价出现证据层、缺层或擅自补层均以 `BODY_FORMULA_MISMATCH` 或 `CONTENT_STRUCTURE_MISMATCH` 阻断。
+- 七个方向必须逐行验收：自我介绍→自我介绍，项目单价→人工单价，单价+面积/工种总价/人工+辅材→施工报价+真实报价，工艺展示→工艺展示+工地照片或工艺节点，日常工作→日常工作+工地照片或工艺节点；不得接受语义相近但来自其他行的组合。
+- FRB01～FRB09 必须分别按锁定模式验收，不得把不同报价口径或多个正文模式混写。检查标题只突出一个主卖点，并在首屏或正文前两段兑现。
+- 逐项核对价格类型、地区、项目、单位、包含范围和同源关系；标准单价不得被写成本案成交或结算，FRB07/FRB08/FRB09 缺少程序校验或合计不一致时以事实不一致阻断。
+- 检查工长身份、案例、施工过程、优势、承诺、结果和客户反馈均有冻结证据；相关优势超过三项，或图片被用于推断不可见事实时阻断。
+- CTA 必须具体且符合当前业务，不得包含无证据的免费、限时、最低价、质保或响应承诺。
+
 允许用于定点回修的阻断 code 为 `TITLE_FORMULA_MISMATCH`、`TITLE_FACT_UNSUPPORTED`、`BODY_FORMULA_MISMATCH`、`CONTENT_STRUCTURE_MISMATCH`、`PERSONA_TONE_MISMATCH`、`PERSONA_STYLE_MISMATCH`、`FACT_CHECK_FAILED`、`FACT_INCONSISTENT`。其他阻断 code 会被视为审核契约错误并停止工作流。
 
 不得用单一综合分数替代问题列表，不得修改原内容。

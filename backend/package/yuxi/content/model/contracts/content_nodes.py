@@ -226,6 +226,7 @@ class RankFormulaCandidatesInputV2(StrictContract):
 
 class StrategySnapshotV1(StrictContract):
     content_direction: str = Field(min_length=1)
+    direction_blueprint: dict[str, Any] | None = None
     selected_group_id: str = Field(min_length=1)
     creation_methods: list[str] = Field(min_length=1)
     creation_method_definitions: list[dict[str, Any]] = Field(min_length=1)
@@ -239,6 +240,8 @@ class StrategySnapshotV1(StrictContract):
     @model_validator(mode="after")
     def verify_snapshot_hash(self) -> StrategySnapshotV1:
         payload = self.model_dump(mode="json", exclude={"snapshot_hash"})
+        if payload.get("direction_blueprint") is None:
+            payload.pop("direction_blueprint")
         canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         if self.snapshot_hash != expected:
@@ -388,8 +391,16 @@ class GenerateContentInputV1(StrictContract):
         )
         if (
             decoration
-            and title_formula_code in {f"T{index:02d}" for index in range(1, 8)}
-            and body_formula_code in {f"C{index:02d}" for index in range(1, 5)}
+            and title_formula_code
+            in {
+                *{f"T{index:02d}" for index in range(1, 8)},
+                *{f"FRT{index:02d}" for index in range(1, 13)},
+            }
+            and body_formula_code
+            in {
+                *{f"C{index:02d}" for index in range(1, 5)},
+                *{f"FRB{index:02d}" for index in range(1, 10)},
+            }
         ):
             if bundle.get("required") is not True:
                 raise ValueError("装修标题和正文公式必须经过必选词库加载路径")
