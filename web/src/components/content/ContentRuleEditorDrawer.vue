@@ -31,20 +31,23 @@ const defaults = () => {
   if (props.type === 'methods') {
     return {
       code: '', name: '', method_type: 'core', principle: '', suitable_scenes: [],
-      sentence_patterns: [], tag_schema: {}, variable_schema: [], risk_rules: [], enabled: true
+      sentence_patterns: [], tag_schema: {}, variable_schema: [], risk_rules: [], enabled: true,
+      industry_scope: props.defaultIndustry ? [props.defaultIndustry] : []
     }
   }
   if (props.type === 'title_formulas') {
     return {
       code: '', name: '', suitable_scenes: [], core_goal: '', reference_examples: [],
-      variable_schema: [], compatible_methods: [], risk_rules: [], enabled: true
+      variable_schema: [], compatible_methods: [], risk_rules: [], enabled: true,
+      industry_scope: props.defaultIndustry ? [props.defaultIndustry] : []
     }
   }
   if (props.type === 'content_formulas') {
     return {
       code: '', name: '', industry_aliases: {}, compatible_methods: [], suitable_scenes: [],
       business_pains: [], structure_schema: [''], reference_examples: [], required_variables: [],
-      output_schema: {}, risk_rules: [], enabled: true
+      output_schema: {}, risk_rules: [], enabled: true,
+      industry_scope: props.defaultIndustry ? [props.defaultIndustry] : []
     }
   }
   return {
@@ -187,6 +190,9 @@ const submit = async () => {
             <a-input v-model:value="form.name" placeholder="让运营人员一眼识别用途" />
           </a-form-item>
         </div>
+        <a-form-item label="行业范围">
+          <a-select v-model:value="form.industry_scope" mode="tags" placeholder="留空表示全部行业；例如 decoration" />
+        </a-form-item>
       </template>
 
       <template v-if="type === 'methods'">

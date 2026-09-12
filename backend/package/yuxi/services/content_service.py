@@ -104,12 +104,24 @@ def _clean_list(values: list[str]) -> list[str]:
     return list(dict.fromkeys(value.strip() for value in values if value and value.strip()))
 
 
+def _scoped_content_type_codes(bundle: dict, industry_slug: str, content_goal: str) -> set[str]:
+    return {
+        code
+        for item in bundle.get("combination_rules") or []
+        if item.get("enabled", True)
+        and (not item.get("industry_scope") or industry_slug in item["industry_scope"])
+        and (not item.get("content_goal_codes") or content_goal in item["content_goal_codes"])
+        for code in item.get("content_type_codes") or []
+    }
+
+
 def normalize_rule_bundle(payload: RuleBundleUpdate) -> dict[str, Any]:
     bundle = payload.model_dump()
     bundle["changelog"] = bundle["changelog"].strip()
     list_fields = {
-        "methods": ("suitable_scenes", "sentence_patterns", "variable_schema", "risk_rules"),
+        "methods": ("industry_scope", "suitable_scenes", "sentence_patterns", "variable_schema", "risk_rules"),
         "title_formulas": (
+            "industry_scope",
             "suitable_scenes",
             "reference_examples",
             "variable_schema",
@@ -117,6 +129,7 @@ def normalize_rule_bundle(payload: RuleBundleUpdate) -> dict[str, Any]:
             "risk_rules",
         ),
         "content_formulas": (
+            "industry_scope",
             "compatible_methods",
             "suitable_scenes",
             "business_pains",
@@ -610,6 +623,7 @@ async def create_content_task(db: AsyncSession, user: User, payload: ContentTask
         raise _content_error(422, "CONTENT_DIRECTION_REQUIRED", "请先选择本次内容方向")
     if content_types and not automatic and (not joint or mode == "direction_scoped"):
         type_map = {item["code"]: item for item in content_types}
+        scoped_direction_codes = _scoped_content_type_codes(bundle or {}, template.slug, goal)
         if content_type_code is None:
             content_type_code = next(
                 (item["code"] for item in content_types if goal in (item.get("supported_goals") or [])),
@@ -618,7 +632,10 @@ async def create_content_task(db: AsyncSession, user: User, payload: ContentTask
         selected_type = type_map.get(content_type_code)
         if selected_type is None:
             raise _content_error(422, "CONTENT_TYPE_INVALID", "内容类型不存在或未发布")
-        if goal not in (selected_type.get("supported_goals") or []):
+        if (
+            goal not in (selected_type.get("supported_goals") or [])
+            and content_type_code not in scoped_direction_codes
+        ):
             raise _content_error(422, "CONTENT_TYPE_GOAL_MISMATCH", "内容类型不支持当前内容目标")
 
     industry_pack = await repo.get_published_industry_pack(template.slug, schema_version=3)

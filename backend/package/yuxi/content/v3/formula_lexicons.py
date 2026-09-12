@@ -16,6 +16,18 @@ TITLE_FORMULA_LEXICON_CODES = {
     "T05": ("title.advice", "title.audience", "title.solution"),
     "T06": ("title.house_type", "title.contrast"),
     "T07": ("title.instruction_value",),
+    "FRT01": ("title.positioning", "title.house_type"),
+    "FRT02": ("title.positioning", "title.beneficial_result"),
+    "FRT03": ("title.oral_emotion", "title.positive_result"),
+    "FRT04": ("title.positioning", "title.audience", "title.pain"),
+    "FRT05": ("title.positioning", "title.beneficial_result"),
+    "FRT06": ("title.positioning", "title.positive_result"),
+    "FRT07": ("title.positioning", "title.instruction_value"),
+    "FRT08": ("title.positioning", "title.instruction_value"),
+    "FRT09": ("title.positioning", "title.house_type"),
+    "FRT10": ("title.house_type", "title.positioning"),
+    "FRT11": ("title.positioning", "title.instruction_value"),
+    "FRT12": ("title.positioning", "title.audience"),
 }
 
 

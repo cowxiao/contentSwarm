@@ -634,6 +634,12 @@ class PostgresManager(metaclass=SingletonMeta):
             "ADD COLUMN IF NOT EXISTS source_content JSONB NOT NULL DEFAULT '{}'::jsonb",
             "ALTER TABLE IF EXISTS content_body_formulas "
             "ADD COLUMN IF NOT EXISTS source_content JSONB NOT NULL DEFAULT '{}'::jsonb",
+            "ALTER TABLE IF EXISTS content_creation_methods "
+            "ADD COLUMN IF NOT EXISTS industry_scope JSONB NOT NULL DEFAULT '[]'::jsonb",
+            "ALTER TABLE IF EXISTS content_title_formulas "
+            "ADD COLUMN IF NOT EXISTS industry_scope JSONB NOT NULL DEFAULT '[]'::jsonb",
+            "ALTER TABLE IF EXISTS content_body_formulas "
+            "ADD COLUMN IF NOT EXISTS industry_scope JSONB NOT NULL DEFAULT '[]'::jsonb",
             """
             ALTER TABLE IF EXISTS content_combination_rules
             ADD COLUMN IF NOT EXISTS schema_version INTEGER NOT NULL DEFAULT 2
@@ -718,9 +724,9 @@ class PostgresManager(metaclass=SingletonMeta):
                         schema_version <> 3
                         OR (
                             combination_type IN ('single', 'double', 'triple', 'quadruple')
-                            AND jsonb_array_length(method_members) > 0
-                            AND jsonb_array_length(title_formula_candidate_codes) > 0
-                            AND jsonb_array_length(body_formula_candidate_codes) > 0
+                            AND jsonb_array_length(method_members::jsonb) > 0
+                            AND jsonb_array_length(title_formula_candidate_codes::jsonb) > 0
+                            AND jsonb_array_length(body_formula_candidate_codes::jsonb) > 0
                         )
                     );
                 END IF;

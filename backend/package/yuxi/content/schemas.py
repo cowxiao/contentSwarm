@@ -202,6 +202,7 @@ class CreationMethodInput(RuleInputBase):
     code: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")
     name: str = Field(min_length=1, max_length=80)
     method_type: Literal["core", "enhancer"] = "core"
+    industry_scope: list[str] = Field(default_factory=list)
     principle: str = Field(min_length=1, max_length=4000)
     suitable_scenes: list[str] = Field(default_factory=list)
     sentence_patterns: list[str] = Field(default_factory=list)
@@ -218,6 +219,7 @@ class TitleFormulaInput(RuleInputBase):
     name: str = Field(min_length=1, max_length=120)
     suitable_scenes: list[str] = Field(default_factory=list)
     core_goal: str = Field(min_length=1, max_length=4000)
+    industry_scope: list[str] = Field(default_factory=list)
     reference_examples: list[str] = Field(default_factory=list)
     variable_schema: list[str] = Field(default_factory=list)
     compatible_methods: list[str] = Field(default_factory=list)
@@ -231,6 +233,7 @@ class ContentFormulaInput(RuleInputBase):
     code: str = Field(min_length=1, max_length=32, pattern=r"^[A-Za-z][A-Za-z0-9_-]*$")
     name: str = Field(min_length=1, max_length=120)
     industry_aliases: dict[str, str] = Field(default_factory=dict)
+    industry_scope: list[str] = Field(default_factory=list)
     compatible_methods: list[str] = Field(default_factory=list)
     suitable_scenes: list[str] = Field(default_factory=list)
     business_pains: list[str] = Field(default_factory=list)
