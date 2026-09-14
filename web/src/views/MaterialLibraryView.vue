@@ -20,6 +20,7 @@ import {
 
 import { contentApi } from '@/apis/content_api'
 import { materialLibraryApi } from '@/apis/material_library_api'
+import { useUserStore } from '@/stores/user'
 import PageHeader from '@/components/shared/PageHeader.vue'
 import PosterOcrReviewModal from '@/components/content/PosterOcrReviewModal.vue'
 import VisualWorkspaceHeader from '@/components/content/VisualWorkspaceHeader.vue'
@@ -28,10 +29,12 @@ const tabs = [
   { key: 'image', label: '素材图片', path: '/materials/images' }
 ]
 const materialType = ref('image')
+const userStore = useUserStore()
 const materialScope = ref('private')
 const canCreateShared = ref(false)
 const isGalleryRoot = computed(() => materialType.value === 'image' && !activeGallery.value)
 const loading = ref(false)
+const remoteSyncing = ref(false)
 const uploading = ref(false)
 const categories = ref([])
 const galleries = ref([])
@@ -522,6 +525,24 @@ function formatSize(bytes) {
   return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`
 }
 
+async function syncRemoteMaterials() {
+  if (remoteSyncing.value) return
+  remoteSyncing.value = true
+  try {
+    const response = await materialLibraryApi.syncRemote()
+    const summary = response.summary || {}
+    message.success(`远程素材同步完成：${summary.assets || 0} 张图片`)
+    materialScope.value = 'enterprise'
+    activeGallery.value = ''
+    await loadCategories()
+    await loadGalleries()
+  } catch (error) {
+    message.error(error.message || '远程素材同步失败，请稍后重试')
+  } finally {
+    remoteSyncing.value = false
+  }
+}
+
 watch(materialType, async () => {
   activeGallery.value = ''
   categoryFilter.value = ''
@@ -545,6 +566,9 @@ onBeforeUnmount(releasePreviews)
     <PageHeader title="素材库" :tabs="tabs" :active-key="materialType" :loading="loading" show-border>
       <template #actions>
         <template v-if="materialType === 'image'">
+          <a-button v-if="userStore.isAdmin" class="lucide-icon-btn" :loading="remoteSyncing" @click="syncRemoteMaterials">
+            <RefreshCw :size="15" />同步远程素材
+          </a-button>
           <a-button v-if="(isGalleryRoot && (materialScope === 'private' || canCreateShared)) || (isTopLevelGallery && !currentGallery?.is_system && currentGallery?.can_manage)" class="lucide-icon-btn" @click="openCreateCategory(isTopLevelGallery ? activeGallery : '')">
             <FolderPlus :size="15" />{{ isTopLevelGallery ? '新建二级图库' : '新建图库' }}
           </a-button>

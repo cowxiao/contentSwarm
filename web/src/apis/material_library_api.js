@@ -21,6 +21,7 @@ export const materialLibraryApi = {
     }),
   listGalleries: (industrySlug = '') =>
     apiGet(`/api/material-library/galleries${encodeQuery({ industry_slug: industrySlug })}`),
+  syncRemote: () => apiPost('/api/material-library/remote-sync', {}),
   importImages: (files, category) => {
     const form = new FormData()
     Array.from(files).forEach((file) => form.append('files', file))

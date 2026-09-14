@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from server.utils.auth_middleware import get_db, get_required_user
+from server.utils.auth_middleware import get_admin_user, get_db, get_required_user
 from yuxi.services.material_library_service import (
     MaterialCategoryCreate,
     MaterialCategoryDelete,
@@ -25,9 +25,18 @@ from yuxi.services.material_library_service import (
     update_material_item,
     update_material_category,
 )
+from yuxi.services.remote_material_library_service import sync_remote_material_library
 from yuxi.storage.postgres.models_business import User
 
 material_library = APIRouter(prefix="/material-library", tags=["material-library"])
+
+
+@material_library.post("/remote-sync")
+async def sync_remote_materials(
+    current_user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await sync_remote_material_library(db, current_user)
 
 
 @material_library.post("/images/import", status_code=status.HTTP_201_CREATED)
