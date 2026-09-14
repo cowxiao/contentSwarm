@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -18,7 +19,9 @@ import (
 
 type publicCatalogDB struct{}
 
-func (publicCatalogDB) QueryRow(context.Context, string, ...any) pgx.Row { return nil }
+func (publicCatalogDB) QueryRow(_ context.Context, sql string, args ...any) pgx.Row {
+	return publicCatalogRow{found: bytes.Contains([]byte(sql), []byte("template_collections")) && len(args) == 1 && args[0] == "category-1"}
+}
 func (publicCatalogDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) {
 	return pgconn.CommandTag{}, nil
 }
@@ -29,6 +32,20 @@ func (publicCatalogDB) Query(_ context.Context, sql string, _ ...any) (pgx.Rows,
 type publicCatalogRows struct {
 	collectionQuery bool
 	read            bool
+}
+
+type publicCatalogRow struct {
+	found bool
+}
+
+func (r publicCatalogRow) Scan(dest ...any) error {
+	if !r.found {
+		return pgx.ErrNoRows
+	}
+	*(dest[0].(*string)) = "category-1"
+	*(dest[1].(*string)) = "workspace-1"
+	*(dest[2].(*string)) = "内容报价"
+	return nil
 }
 
 func (r *publicCatalogRows) Close()                                       {}
@@ -112,5 +129,100 @@ func TestTemplateCatalogIsPublicAndNeedsNoWorkspaceID(t *testing.T) {
 	}
 	if len(response.Categories) != 1 || response.Categories[0].Name != "内容报价" || response.Categories[0].Templates == nil {
 		t.Fatalf("response = %+v", response)
+	}
+}
+
+func TestTemplateCategoriesArePublicAndNeedNoAPIKey(t *testing.T) {
+	service := templates.NewService(publicCatalogDB{}, nil, nil)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/templates/categories", nil)
+
+	templatesCategoriesHandler(service).ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Categories []templates.PublicCategory `json:"categories"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Categories) != 1 || response.Categories[0].ID != "category-1" || response.Categories[0].Name != "内容报价" {
+		t.Fatalf("response = %+v", response)
+	}
+}
+
+func TestTemplatesByCategoryArePublicAndNeedNoAPIKey(t *testing.T) {
+	service := templates.NewService(publicCatalogDB{}, nil, nil)
+	router := chi.NewRouter()
+	router.Get("/api/v1/templates/categories/{id}/templates", templatesByCategoryHandler(service))
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/templates/categories/category-1/templates", nil)
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Templates []templates.PublicTemplate `json:"templates"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Templates == nil || len(response.Templates) != 0 {
+		t.Fatalf("response = %+v", response)
+	}
+}
+
+func TestTemplatesByCategoryReturnsNotFoundForUnknownCategory(t *testing.T) {
+	service := templates.NewService(publicCatalogDB{}, nil, nil)
+	router := chi.NewRouter()
+	router.Get("/api/v1/templates/categories/{id}/templates", templatesByCategoryHandler(service))
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/templates/categories/unknown/templates", nil)
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestTemplatesByCategoriesAcceptsMultipleIDsWithoutAPIKey(t *testing.T) {
+	service := templates.NewService(publicCatalogDB{}, nil, nil)
+	router := chi.NewRouter()
+	router.Get("/api/v1/templates/categories/templates", templatesByCategoriesHandler(service))
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/templates/categories/templates?categoryIds=category-1,category-1", nil)
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var response struct {
+		Categories []templates.Category `json:"categories"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Categories) != 2 || response.Categories[0].ID != "category-1" {
+		t.Fatalf("response = %+v", response)
+	}
+}
+
+func TestTemplatesByCategoriesRequiresIDs(t *testing.T) {
+	service := templates.NewService(publicCatalogDB{}, nil, nil)
+	router := chi.NewRouter()
+	router.Get("/api/v1/templates/categories/templates", templatesByCategoriesHandler(service))
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/templates/categories/templates", nil)
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

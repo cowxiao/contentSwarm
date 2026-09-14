@@ -587,6 +587,80 @@
         }
       }
     },
+    "/templates/categories": {
+      "get": {
+        "summary": "List all template categories",
+        "description": "Public endpoint; no authentication, API key, or workspace id is required.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Category ids and names.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["categories"],
+                  "properties": {
+                    "categories": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "name"],
+                        "properties": {
+                          "id": { "type": "string" },
+                          "name": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/templates/categories/templates": {
+      "get": {
+        "summary": "List templates in multiple categories",
+        "description": "Public endpoint; no authentication, API key, or workspace id is required. Pass categoryIds as a comma-separated list; repeated categoryIds parameters are also accepted.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "categoryIds",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" },
+            "example": "category-1,category-2"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Templates assigned to the category.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["categories"],
+                  "properties": {
+                    "categories": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/TemplateCategory" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "categoryIds is missing."
+          },
+          "404": {
+            "description": "One of the categories was not found."
+          }
+        }
+      }
+    },
     "/themes": {
       "get": {
         "summary": "The built-in theme catalog",

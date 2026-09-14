@@ -19,6 +19,9 @@ import (
 // (collections) are registered before the {id} param routes.
 func mountTemplates(api chi.Router, tm *templates.Service, acct *accounts.Service, up *uploads.Service) {
 	api.Get("/templates/catalog", templatesCatalogHandler(tm))
+	api.Get("/templates/categories", templatesCategoriesHandler(tm))
+	api.Get("/templates/categories/templates", templatesByCategoriesHandler(tm))
+	api.Get("/templates/categories/{id}/templates", templatesByCategoryHandler(tm))
 	api.Group(func(r chi.Router) {
 		r.Use(requireAuth(acct))
 		r.Get("/templates", templatesListHandler(tm))
@@ -37,6 +40,52 @@ func mountTemplates(api chi.Router, tm *templates.Service, acct *accounts.Servic
 		r.Post("/templates/{id}/instantiate", templatesInstantiateHandler(tm))
 		r.Post("/templates/{id}/collection", templatesAssignCollectionHandler(tm))
 	})
+}
+
+func templatesCategoriesHandler(tm *templates.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		categories, err := tm.PublicCategories(r.Context())
+		if err != nil {
+			templatesProblem(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"categories": categories})
+	}
+}
+
+func templatesByCategoryHandler(tm *templates.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		list, err := tm.PublicTemplatesByCategory(r.Context(), chi.URLParam(r, "id"))
+		if err != nil {
+			templatesProblem(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"templates": list})
+	}
+}
+
+func templatesByCategoriesHandler(tm *templates.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		categoryIDs := make([]string, 0)
+		for _, value := range r.URL.Query()["categoryIds"] {
+			for _, categoryID := range strings.Split(value, ",") {
+				categoryID = strings.TrimSpace(categoryID)
+				if categoryID != "" {
+					categoryIDs = append(categoryIDs, categoryID)
+				}
+			}
+		}
+		if len(categoryIDs) == 0 {
+			problemWithCode(w, r, http.StatusBadRequest, "Bad Request", "categoryIds is required", "missing_category_ids")
+			return
+		}
+		categories, err := tm.PublicTemplatesByCategories(r.Context(), categoryIDs)
+		if err != nil {
+			templatesProblem(w, r, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"categories": categories})
+	}
 }
 
 func templatesCatalogHandler(tm *templates.Service) http.HandlerFunc {

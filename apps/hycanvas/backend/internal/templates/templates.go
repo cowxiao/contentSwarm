@@ -626,6 +626,11 @@ type Category struct {
 	Templates []PublicTemplate `json:"templates"`
 }
 
+type PublicCategory struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 type PublicTemplate struct {
 	ID             string         `json:"id"`
 	Title          string         `json:"title"`
@@ -688,6 +693,58 @@ func (s *Service) PublicCategorizedCatalog(ctx context.Context) ([]Category, err
 		categories = append(categories, Category{ID: collection.ID, Name: collection.Name, Templates: templates})
 	}
 	return categories, nil
+}
+
+func (s *Service) PublicCategories(ctx context.Context) ([]PublicCategory, error) {
+	rows, err := s.listAllCollections(ctx)
+	if err != nil {
+		return nil, err
+	}
+	categories := make([]PublicCategory, 0, len(rows))
+	for _, row := range rows {
+		categories = append(categories, PublicCategory{ID: row.ID, Name: row.Name})
+	}
+	return categories, nil
+}
+
+func (s *Service) PublicTemplatesByCategory(ctx context.Context, categoryID string) ([]PublicTemplate, error) {
+	if _, err := s.getCollection(ctx, categoryID); err != nil {
+		return nil, err
+	}
+	return s.publicTemplatesForCategory(ctx, categoryID)
+}
+
+func (s *Service) PublicTemplatesByCategories(ctx context.Context, categoryIDs []string) ([]Category, error) {
+	categories := make([]Category, 0, len(categoryIDs))
+	for _, categoryID := range categoryIDs {
+		collection, err := s.getCollection(ctx, categoryID)
+		if err != nil {
+			return nil, err
+		}
+		templates, err := s.publicTemplatesForCategory(ctx, categoryID)
+		if err != nil {
+			return nil, err
+		}
+		categories = append(categories, Category{ID: collection.ID, Name: collection.Name, Templates: templates})
+	}
+	return categories, nil
+}
+
+func (s *Service) publicTemplatesForCategory(ctx context.Context, categoryID string) ([]PublicTemplate, error) {
+	rows, err := s.listCollectionRows(ctx, categoryID)
+	if err != nil {
+		return nil, err
+	}
+	templates := make([]PublicTemplate, 0, len(rows))
+	for _, row := range rows {
+		template := rowToTemplate(row)
+		templates = append(templates, PublicTemplate{
+			ID: template.ID, Title: template.Title, Categories: template.Categories, Tags: template.Tags,
+			Format: template.Format, PageCount: template.PageCount, PreviewURLs: template.PreviewURLs,
+			FillableFields: template.FillableFields, CreatedAt: template.CreatedAt, UpdatedAt: template.UpdatedAt,
+		})
+	}
+	return templates, nil
 }
 
 func (s *Service) DeleteCollection(ctx context.Context, userID, id string) error {
