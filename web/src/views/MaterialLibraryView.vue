@@ -260,6 +260,7 @@ async function loadItems() {
     const response = await materialLibraryApi.listItems({
       material_type: materialType.value,
       category: materialType.value === 'image' ? activeGallery.value : categoryFilter.value,
+      status: 'enabled',
       query: query.value,
       sort: sort.value,
       page: page.value,

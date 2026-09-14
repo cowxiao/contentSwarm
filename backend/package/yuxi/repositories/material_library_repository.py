@@ -248,6 +248,7 @@ class MaterialLibraryRepository:
         filters = [
             self.item_access(owner_uid),
             ContentMaterialLibraryItem.material_type == material_type,
+            ContentMaterialLibraryItem.status == "enabled",
             ContentMaterialLibraryItem.deleted_at.is_(None),
             ContentCoverAsset.deleted_at.is_(None),
         ]

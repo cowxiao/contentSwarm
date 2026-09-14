@@ -181,6 +181,53 @@ async def test_material_import_rejects_free_form_or_missing_category(test_client
         assert response.status_code == 422, response.text
 
 
+async def test_disabled_image_is_hidden_from_enabled_list_and_gallery_summary(test_client, material_users):
+    headers = material_users["owner"]
+    gallery_response = await test_client.post(
+        "/api/material-library/categories",
+        headers=headers,
+        json={"material_type": "image", "name": f"下架测试-{uuid.uuid4().hex[:8]}"},
+    )
+    assert gallery_response.status_code == 201, gallery_response.text
+    gallery = gallery_response.json()["category"]
+    uploaded = await test_client.post(
+        "/api/material-library/images/import",
+        headers=headers,
+        data={"category": gallery["id"]},
+        files=[("files", ("disabled.png", _png(), "image/png"))],
+    )
+    assert uploaded.status_code == 201, uploaded.text
+    item = uploaded.json()["items"][0]
+    try:
+        disabled = await test_client.patch(
+            f"/api/material-library/items/{item['id']}",
+            headers=headers,
+            json={"status": "disabled"},
+        )
+        assert disabled.status_code == 200, disabled.text
+
+        listed = await test_client.get(
+            f"/api/material-library/items?material_type=image&category={gallery['id']}&status=enabled",
+            headers=headers,
+        )
+        assert listed.status_code == 200, listed.text
+        assert listed.json()["total"] == 0
+
+        galleries = await test_client.get("/api/material-library/galleries", headers=headers)
+        assert galleries.status_code == 200, galleries.text
+        summary = next(entry for entry in galleries.json()["galleries"] if entry["id"] == gallery["id"])
+        assert summary["count"] == 0
+        assert summary["cover_item_id"] is None
+    finally:
+        await test_client.delete(f"/api/material-library/items/{item['id']}", headers=headers)
+        await test_client.request(
+            "DELETE",
+            f"/api/material-library/categories/{gallery['id']}?material_type=image",
+            headers=headers,
+            json={"target_category_id": "uncategorized"},
+        )
+
+
 async def test_image_gallery_crud_and_safe_item_reassignment(test_client, material_users):
     headers = material_users["owner"]
     blank = await test_client.post(
