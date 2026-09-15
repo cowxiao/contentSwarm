@@ -368,12 +368,14 @@ async def process_content_run(ctx, run_id: str):
         if not explicitly_cancelled:
             async with pg_manager.get_async_session_context() as db:
                 persisted_task = await ContentRepository(db).get_task(task.id, for_update=True)
-                persisted_task.status = "failed"
-                persisted_task.error_json = {
-                    "code": "CONTENT_RUN_WORKER_INTERRUPTED",
-                    "message": "执行进程发生重载或重启，请从当前节点重试",
-                    "retryable": True,
-                }
+                # 任务可能在中断与收尾之间被用户删除，此时只收尾 run 状态
+                if persisted_task is not None:
+                    persisted_task.status = "failed"
+                    persisted_task.error_json = {
+                        "code": "CONTENT_RUN_WORKER_INTERRUPTED",
+                        "message": "执行进程发生重载或重启，请从当前节点重试",
+                        "retryable": True,
+                    }
                 await ContentRepository(db).track(
                     "content_run_interrupted_unexpectedly",
                     uid=run.uid,
@@ -401,8 +403,10 @@ async def process_content_run(ctx, run_id: str):
             return
         async with pg_manager.get_async_session_context() as db:
             persisted_task = await ContentRepository(db).get_task(task.id, for_update=True)
-            persisted_task.status = "cancelled"
-            persisted_task.error_json = {"code": "CONTENT_RUN_CANCELLED", "message": "内容运行已取消"}
+            # 任务可能在取消与收尾之间被用户删除，此时只收尾 run 状态
+            if persisted_task is not None:
+                persisted_task.status = "cancelled"
+                persisted_task.error_json = {"code": "CONTENT_RUN_CANCELLED", "message": "内容运行已取消"}
         await _set_content_run_status(
             run_id,
             status="cancelled",
