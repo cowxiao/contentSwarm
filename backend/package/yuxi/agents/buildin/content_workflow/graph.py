@@ -677,6 +677,15 @@ class ContentWorkflowAgent(BaseAgent):
             asset_ids = list(cover_job.get("asset_ids") or [])
             if cover_job.get("status") != "succeeded" or not asset_ids:
                 raise ValueError("封面生成成功后才能选择保存")
+            if len(asset_ids) == 1:
+                return {
+                    "selected_cover": {
+                        "asset_id": asset_ids[0],
+                        "cover_job_id": cover_job["cover_job_id"],
+                    },
+                    "state_version": state_version + 1,
+                    "resume_parent_run_id": None,
+                }
             answer = require_resume({"asset_ids": asset_ids, "cover_job_id": cover_job["cover_job_id"]})
             asset_id = answer.get("asset_id")
             if asset_id not in asset_ids:

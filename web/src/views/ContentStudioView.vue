@@ -76,6 +76,7 @@ const selectedTitleId = ref('')
 const selectedTitleFormulaCode = ref('')
 const selectedBodyFormulaCode = ref('')
 const selectedCoverAssetId = ref('')
+let autoResumedCoverKey = ''
 const confirmedEvidenceIds = ref([])
 const approvalNote = ref('')
 const modelSpec = ref('')
@@ -1240,6 +1241,31 @@ watch(
     approvalNote.value = ''
   },
   { deep: true }
+)
+
+watch(
+  () => coverCandidates.value.map((item) => item.assetId).join(','),
+  async (assetKey) => {
+    const interrupt = store.interrupt
+    if (interrupt?.interrupt_type !== 'cover_selection') return
+    const assetIds = assetKey ? assetKey.split(',').filter(Boolean) : []
+    if (assetIds.length !== 1) return
+    const resumeKey = `${interrupt.run_id}:${assetIds[0]}`
+    if (autoResumedCoverKey === resumeKey) return
+    autoResumedCoverKey = resumeKey
+    try {
+      await store.resumeRun({
+        run_id: interrupt.run_id,
+        node_id: interrupt.node_id,
+        expected_state_version: interrupt.expected_state_version,
+        asset_id: assetIds[0]
+      })
+    } catch (error) {
+      autoResumedCoverKey = ''
+      message.error(error.message || '自动确认封面失败')
+    }
+  },
+  { immediate: true }
 )
 
 watch(

@@ -1311,7 +1311,11 @@ async def test_cover_gate_accepts_generated_assets_without_review(monkeypatch, s
         "run_id": "run-1",
         "state_version": 3,
         "visual_review": {"assets": [{"asset_id": "generated-cover", "status": "blocked"}]},
-        "cover_job": {"cover_job_id": "job-1", "status": "succeeded", "asset_ids": ["generated-cover"]},
+        "cover_job": {
+            "cover_job_id": "job-1",
+            "status": "succeeded",
+            "asset_ids": ["generated-cover", "second-cover"],
+        },
     }
     node = {"id": "select_cover", "interrupt_type": "cover_selection"}
     if selected_id == "foreign-cover":
@@ -1320,8 +1324,34 @@ async def test_cover_gate_accepts_generated_assets_without_review(monkeypatch, s
     else:
         result = await ContentWorkflowAgent()._v3_human_review(node, state)
         assert result["selected_cover"]["asset_id"] == selected_id
-    assert captured["asset_ids"] == ["generated-cover"]
+    assert captured["asset_ids"] == ["generated-cover", "second-cover"]
     assert "asset_reviews" not in captured
+
+
+@pytest.mark.asyncio
+async def test_cover_gate_auto_selects_the_only_generated_asset(monkeypatch):
+    def unexpected_interrupt(_payload):
+        pytest.fail("唯一封面不应进入人工选择")
+
+    monkeypatch.setattr(content_workflow_graph_module, "interrupt", unexpected_interrupt)
+    result = await ContentWorkflowAgent()._v3_human_review(
+        {"id": "select_cover", "interrupt_type": "cover_selection"},
+        {
+            "run_id": "run-1",
+            "state_version": 3,
+            "cover_job": {
+                "cover_job_id": "job-1",
+                "status": "succeeded",
+                "asset_ids": ["generated-cover"],
+            },
+        },
+    )
+
+    assert result == {
+        "selected_cover": {"asset_id": "generated-cover", "cover_job_id": "job-1"},
+        "state_version": 4,
+        "resume_parent_run_id": None,
+    }
 
 
 @pytest.mark.asyncio
