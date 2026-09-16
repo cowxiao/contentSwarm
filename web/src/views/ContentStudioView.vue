@@ -65,7 +65,7 @@ const stage = ref(1)
 const creation = reactive({
   industry_template_id: '',
   mode: 'pro',
-  creation_mode: 'original',
+  creation_mode: 'viral_rewrite',
   content_goal: '',
   content_type_code: undefined,
   name: ''
@@ -1589,7 +1589,7 @@ const createTask = async () => {
     return
   }
   try {
-    const task = await store.createTask({ ...creation })
+    const task = await store.createTask({ ...creation, creation_mode: 'viral_rewrite' })
     await router.replace(`/content/tasks/${task.id}`)
     initializeFormValues()
     initializeVisualSelection()
@@ -1601,7 +1601,7 @@ const createTask = async () => {
 }
 
 const buildBrief = () => ({
-  brand: { name: formValues.brand_name || '' },
+  brand: { name: formValues.brand_name || formValues.user_request || '' },
   audience: Array.isArray(formValues.audience) ? formValues.audience : formValues.audience ? [formValues.audience] : [],
   business_variables: Object.fromEntries(
     Object.entries(formValues).filter(
@@ -1669,10 +1669,6 @@ onBeforeUnmount(() => {
 const compileBrief = async () => {
   if (photoComposition.value?.slots.some(slot => !slot.image_item_id)) {
     message.warning('请填满图片组合的所有位置')
-    return
-  }
-  if (!selectedImageItemId.value) {
-    message.warning('请选择一张图库图片作为封面主图')
     return
   }
   if (!selectedHyCanvasTemplateId.value) {
@@ -1971,24 +1967,10 @@ const openVersions = async () => {
           <div class="setup-grid">
             <div class="field-block">
               <span id="creation-mode-label">创作模式</span>
-              <div class="creation-mode-options" role="radiogroup" aria-labelledby="creation-mode-label">
-                <label
-                  v-for="option in [
-                    { label: '原创模式', value: 'original' },
-                    { label: '爆款仿写', value: 'viral_rewrite' }
-                  ]"
-                  :key="option.value"
-                  class="creation-mode-card"
-                  :class="{ selected: creation.creation_mode === option.value }"
-                >
-                  <input v-model="creation.creation_mode" type="radio" name="creation-mode" :value="option.value" />
-                  <span>{{ option.label }}</span>
-                </label>
+              <div class="creation-mode-options" role="status">
+                <span class="creation-mode-card selected">爆款仿写</span>
               </div>
-              <small v-if="creation.creation_mode === 'viral_rewrite'">
-                系统比较已准备的完整文章参考，复用选中结构，业务事实来自本次真实资料。
-              </small>
-              <small v-else>根据锁定公式原创内容，并使用真实知识库补充业务事实。</small>
+              <small>系统比较已准备的完整文章参考，复用选中结构，业务事实来自本次真实资料。</small>
             </div>
             <label class="field-block">
               <span>内容目标</span>
@@ -2040,59 +2022,29 @@ const openVersions = async () => {
               <div class="mode-row">
                 <span class="mode-badge">{{ isQuickMode ? '简化版' : '专业版' }}</span>
                 <span class="mode-badge">
-                  {{ store.task?.runtime_config_snapshot?.creation_mode === 'viral_rewrite' ? '爆款仿写' : '原创模式' }}
+                  爆款仿写
                 </span>
                 <span>{{ store.template?.name }}</span>
                 <small v-if="saveStatusLabel" :class="{ 'save-error': store.saveStatus === 'error' }">{{ saveStatusLabel }}</small>
               </div>
               <div class="dynamic-form">
-                <label v-for="field in activeFields" :key="field.key" class="field-block">
-                  <span>{{ field.label }}<em v-if="field.required">*</em></span>
-                  <a-input
-                    v-if="field.type === 'text'"
-                    v-model:value="formValues[field.key]"
-                    :placeholder="field.placeholder || `请输入${field.label}`"
-                  />
+                <label class="field-block">
+                  <span>内容需求</span>
                   <a-textarea
-                    v-else-if="field.type === 'textarea'"
-                    v-model:value="formValues[field.key]"
-                    :rows="3"
-                    :placeholder="field.placeholder || `请输入${field.label}`"
-                  />
-                  <a-select
-                    v-else-if="field.type === 'channel'"
-                    :value="store.task.channel_profile_version_id"
-                    :options="(store.bootstrap?.channel_profiles || []).map(channel => ({ value: channel.id, label: channel.name }))"
-                    disabled
-                    placeholder="任务尚未绑定发布渠道"
-                  />
-                  <a-select
-                    v-else-if="field.type === 'tags'"
-                    v-model:value="formValues[field.key]"
-                    mode="tags"
-                    :token-separators="[',', '，']"
-                    :placeholder="`输入${field.label}后回车`"
+                    v-model:value="formValues.user_request"
+                    :rows="6"
+                    placeholder="请直接描述想要生成的内容、业务信息和特殊要求"
                   />
                 </label>
               </div>
             </div>
-            <aside class="facts-preview">
-              <BookOpenCheck :size="22" />
-              <h3>事实优先</h3>
-              <p>提交后系统会形成 ContentBrief，并把人工输入标准化为带来源的 EvidenceBundle。</p>
-              <ul>
-                <li>数字和结果必须可验证</li>
-                <li>知识库由内容调研 Agent 统一配置</li>
-                <li>规则组合不通过 RAG 判断</li>
-              </ul>
-            </aside>
           </div>
           <section class="visual-material-card">
             <div class="visual-material-heading">
               <div>
                 <span class="section-kicker">视觉素材</span>
                 <h3>选择图库与封面模板</h3>
-                <p>图库图片将作为 HyCanvas 封面主图；内容生成并审核通过后，系统会按所选模板生成可继续编辑的封面。</p>
+                <p>可选图库图片作为 HyCanvas 封面主图；内容生成并审核通过后，系统会按所选模板生成可继续编辑的封面。</p>
               </div>
               <a-button @click="router.push('/materials/images')">
                 <FolderOpen :size="15" />管理素材库
@@ -2102,8 +2054,8 @@ const openVersions = async () => {
             <a-spin :spinning="materialSelectorLoading">
               <div class="material-selector-block">
                 <div class="material-selector-title">
-                  <div><Image :size="18" /><strong>选择图库图片</strong><em>必选 · 多选</em></div>
-                  <small>首张图片作为封面原图，最多可同时选择 9 张。</small>
+                  <div><Image :size="18" /><strong>选择图库图片</strong><em>可选 · 多选</em></div>
+                  <small>如需使用图库素材可选择，首张图片作为封面原图，最多可同时选择 9 张。</small>
                 </div>
                 <div v-if="rootMaterialGalleries.length" class="gallery-folder-grid" aria-label="素材图库">
                   <button

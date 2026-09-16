@@ -15,7 +15,6 @@ import {
   Users,
   IdCard,
   SlidersHorizontal,
-  Tags,
   UserRoundPen,
   ShieldCheck,
   Layers,
@@ -146,14 +145,6 @@ const mainList = computed(() => {
     activePaths: ['/hycanvas', '/materials'],
     icon: PanelsTopLeft,
     activeIcon: PanelsTopLeft
-  })
-
-  items.push({
-    name: '图片打标',
-    path: 'http://47.111.188.85:18081/',
-    external: true,
-    icon: Tags,
-    activeIcon: Tags
   })
 
   items.push({
