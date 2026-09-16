@@ -333,10 +333,6 @@ def compile_content_brief(
     fields = template.quick_form_schema if task.mode == "quick" else template.pro_form_schema
     # 行业表单只负责行业语言，V3 生成协议消费稳定的平台变量。字段映射来自
     # 已发布表单/行业包配置，新增行业无需修改 Skill 或工作流代码。
-    # 简化版表单允许用户用一段自然语言描述全部需求。
-    # 有需求文本时，不再要求旧行业表单中的每个字段逐项填写。
-    if form_values.get("user_request"):
-        return compiled, []
     for field in fields or []:
         variable_code = field.get("variable_code")
         value = form_values.get(field.get("key"))
@@ -378,6 +374,10 @@ def compile_content_brief(
         "visual_material": raw.get("visual_material"),
     }
     missing = []
+    # 简化版表单允许用户用一段自然语言描述全部需求。
+    # 有需求文本时，不再要求旧行业表单中的每个字段逐项填写。
+    if form_values.get("user_request"):
+        return compiled, []
     for field in fields or []:
         if not field.get("required"):
             continue

@@ -43,6 +43,25 @@ def test_compile_brief_returns_specific_required_fields():
     assert missing == [{"field": "result", "label": "真实结果"}]
 
 
+def test_compile_brief_accepts_single_user_request_without_legacy_required_fields():
+    task = SimpleNamespace(id="ct_simple", content_goal="traffic", mode="pro")
+    template = SimpleNamespace(
+        slug="decoration",
+        quick_form_schema=[],
+        pro_form_schema=[
+            {"key": "brand_name", "label": "品牌", "required": True},
+            {"key": "scenario", "label": "场景", "required": True, "variable_code": "scenario"},
+        ],
+    )
+    brief = ContentBriefPayload(form_values={"user_request": "杭州装修公司，做爆款仿写小红书内容"})
+
+    compiled, missing = compile_content_brief(task=task, template=template, brief=brief)
+
+    assert missing == []
+    assert compiled["form_values"]["user_request"] == "杭州装修公司，做爆款仿写小红书内容"
+    assert compiled["business_variables"]["user_request"] == "杭州装修公司，做爆款仿写小红书内容"
+
+
 @pytest.mark.parametrize("form_channel", ["", "stale-channel"])
 def test_pro_brief_validates_channel_bound_to_task_instead_of_stale_form(form_channel):
     task = SimpleNamespace(
