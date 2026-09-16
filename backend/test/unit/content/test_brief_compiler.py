@@ -123,3 +123,17 @@ def test_pro_brief_requires_real_task_channel_even_if_form_claims_one():
     _, missing = compile_content_brief(task=task, template=template, brief=brief)
 
     assert missing == [{"field": "channel_profile_version_id", "label": "发布渠道"}]
+
+
+@pytest.mark.parametrize("payload", [
+    {"user_request": ""}, {"user_request": "   "},
+    {"form_values": {"user_request": ""}}, {"form_values": {"user_request": "  "}},
+])
+def test_empty_single_input_only_requests_visible_content_requirement(payload):
+    task = SimpleNamespace(id="ct_empty", content_goal="acquire", mode="pro")
+    template = SimpleNamespace(slug="decoration", quick_form_schema=[], pro_form_schema=[
+        {"key": "brand_name", "label": "品牌", "required": True},
+        {"key": "project_type", "label": "户型", "required": True},
+    ])
+    _, missing = compile_content_brief(task=task, template=template, brief=ContentBriefPayload(**payload))
+    assert missing == [{"field": "user_request", "label": "内容需求"}]

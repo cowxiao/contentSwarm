@@ -392,11 +392,12 @@ const createHyCanvasDesign = async () => {
 }
 
 const taskId = computed(() => route.params.taskId)
+const creationTemplates = computed(() => store.templates.filter((item) => item.slug === 'decoration'))
 const selectedTemplate = computed(() =>
   store.templates.find((item) => item.id === creation.industry_template_id)
 )
 const selectedIndustrySlug = computed(() => store.template?.slug || selectedTemplate.value?.slug || '')
-const needsContentDirection = computed(() => selectedTemplate.value?.strategy_mode === 'direction_scoped' && !selectedTemplate.value?.blueprint_first)
+const needsContentDirection = computed(() => selectedTemplate.value?.strategy_mode === 'direction_scoped')
 const selectedIndustryPack = computed(() => (store.bootstrap?.industry_packs || []).find(item => item.slug === selectedIndustrySlug.value && item.status === 'published'))
 const scopedDirectionRules = computed(() => (store.ruleBundle?.combination_rules || []).filter((item) => {
   const industryScope = item.industry_scope || []
@@ -415,47 +416,6 @@ const directionOptions = computed(() => (store.ruleBundle?.content_types || [])
       : (item.supported_goals || []).includes(creation.content_goal)
   ))
   .map(item => ({ ...item, name: selectedIndustryPack.value?.content_type_aliases?.[item.code] || item.name })))
-const contentDirectionCascadeOptions = computed(() => {
-  const topicOptions = []
-  const topicOptionsByName = new Map()
-
-  for (const direction of directionOptions.value) {
-    const rule = scopedDirectionRules.value.find((item) =>
-      (item.content_type_codes || []).includes(direction.code) && item.source_metadata?.topic_type
-    )
-    const topicType = rule?.source_metadata?.topic_type?.trim()
-    const contentType = rule?.source_metadata?.content_direction_name?.trim() || direction.name
-
-    if (!topicType || topicType === contentType) {
-      topicOptions.push({ value: direction.code, label: contentType })
-      continue
-    }
-
-    let topicOption = topicOptionsByName.get(topicType)
-    if (!topicOption) {
-      topicOption = { value: `topic:${topicType}`, label: topicType, children: [] }
-      topicOptionsByName.set(topicType, topicOption)
-      topicOptions.push(topicOption)
-    }
-    topicOption.children.push({ value: direction.code, label: contentType })
-  }
-
-  return topicOptions
-})
-const selectedContentDirectionPath = computed({
-  get: () => {
-    const code = creation.content_type_code
-    if (!code) return undefined
-    for (const option of contentDirectionCascadeOptions.value) {
-      if (option.value === code) return [code]
-      if (option.children?.some((child) => child.value === code)) return [option.value, code]
-    }
-    return undefined
-  },
-  set: (path) => {
-    creation.content_type_code = Array.isArray(path) && path.length ? path[path.length - 1] : undefined
-  }
-})
 const activeFields = computed(() => {
   if (!store.task) {
     if (!selectedTemplate.value) return []
@@ -1571,7 +1531,7 @@ onMounted(async () => {
       }
     } else {
       store.resetCurrentTask()
-      creation.industry_template_id = store.templates[0]?.id || ''
+      creation.industry_template_id = creationTemplates.value[0]?.id || ''
       creation.content_goal = selectedTemplate.value?.default_goal || 'acquire'
       initializeFormValues()
     }
@@ -1582,11 +1542,11 @@ onMounted(async () => {
 
 const createTask = async () => {
   if (!creation.industry_template_id || !creation.content_goal) {
-    message.warning('请选择行业模板和内容目标')
+    message.warning('装修与家居模板尚未就绪，请刷新后重试')
     return
   }
   if (needsContentDirection.value && !creation.content_type_code) {
-    message.warning('请选择本次内容方向')
+    message.warning('请选择创作类型')
     return
   }
   try {
@@ -1664,6 +1624,10 @@ onBeforeUnmount(() => {
 })
 
 const compileBrief = async () => {
+  if (!String(formValues.user_request || '').trim()) {
+    message.warning('请填写内容需求')
+    return
+  }
   if (photoComposition.value?.slots.some(slot => !slot.image_item_id)) {
     message.warning('请填满图片组合的所有位置')
     return
@@ -1969,31 +1933,13 @@ const openVersions = async () => {
               </div>
               <small>系统比较已准备的完整文章参考，复用选中结构，业务事实来自本次真实资料。</small>
             </div>
-            <label class="field-block">
-              <span>内容目标</span>
-              <a-select v-model:value="creation.content_goal" placeholder="请选择内容目标">
-                <a-select-option v-for="goal in store.contentGoals" :key="goal.code" :value="goal.code">
-                  {{ goal.name }} · {{ goal.description }}
-                </a-select-option>
-              </a-select>
-            </label>
-            <p v-if="selectedTemplate?.blueprint_first" class="auto-strategy-hint">填写资料后，系统自动匹配参考结构与创作方式，无需选择内容方向。</p>
-            <label v-if="needsContentDirection" class="field-block">
-              <span>一级内容方向（选题类型）</span>
-              <a-cascader
-                v-model:value="selectedContentDirectionPath"
-                placeholder="请选择选题类型/内容类型"
-                :options="contentDirectionCascadeOptions"
-                expand-trigger="hover"
-              />
-              <small>先选择选题类型；如有内容类型子分类，再选择具体分类。</small>
-            </label>
+            <p v-if="selectedTemplate?.blueprint_first" class="auto-strategy-hint">选择创作类型并填写资料后，系统自动匹配参考结构与创作方式。</p>
             <p v-else-if="selectedTemplate && !selectedTemplate.blueprint_first">根据本次资料评分选择该行业的公式和创作手法。</p>
           </div>
 
           <div class="template-grid">
             <button
-              v-for="item in store.templates"
+              v-for="item in creationTemplates"
               :key="item.id"
               type="button"
               class="template-card"
@@ -2002,8 +1948,16 @@ const openVersions = async () => {
             >
               <strong>{{ item.name }}</strong>
               <span>{{ item.description }}</span>
-              <small>默认目标：{{ store.contentGoals.find((goal) => goal.code === item.default_goal)?.name }}</small>
             </button>
+          </div>
+
+          <div v-if="needsContentDirection" class="field-block creation-type-field">
+            <span id="creation-type-label">创作类型</span>
+            <a-radio-group v-model:value="creation.content_type_code" aria-labelledby="creation-type-label">
+              <a-radio-button v-for="item in directionOptions" :key="item.code" :value="item.code">
+                {{ item.name }}
+              </a-radio-button>
+            </a-radio-group>
           </div>
 
           <div class="stage-actions">
@@ -3011,6 +2965,11 @@ const openVersions = async () => {
 .run-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
 .active-run-layout { width: 100%; max-width: 1100px; min-height: calc(100vh - 210px); margin: 0 auto; display: flex; flex-direction: column; gap: 0; }
 .setup-grid { grid-template-columns: 1fr 1fr; margin-bottom: 20px; }
+.creation-type-field {
+  margin-top: 24px;
+  :deep(.ant-radio-group) { display: flex; flex-wrap: wrap; gap: 8px; }
+}
+
 .template-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .template-card { min-height: 116px; padding: 16px; display: flex; flex-direction: column; gap: 7px; text-align: left; border: 1px solid var(--gray-150); border-radius: 8px; background: var(--gray-0); color: var(--color-text); cursor: pointer; }
 .template-card:hover { border-color: var(--main-300); background: var(--main-10); }
@@ -3164,8 +3123,8 @@ const openVersions = async () => {
 .completion-result-actions :deep(.ant-btn-primary) { border-color: var(--color-info-500); background: var(--color-info-500); box-shadow: none; }
 .completion-result-actions :deep(.ant-btn-primary:hover) { border-color: var(--color-info-700); background: var(--color-info-700); }
 .completion-version-button { grid-column: 1 / -1; }
-.result-detail-layout { height: calc(100vh - 190px); min-height: 600px; max-height: 820px; display: grid; grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr); overflow: hidden; border: 1px solid var(--gray-150); border-radius: 8px; }
-.result-detail-cover { min-width: 0; display: flex; flex-direction: column; padding: 20px; background: var(--gray-25); border-right: 1px solid var(--gray-150); }
+.result-detail-layout { height: calc(100dvh - 190px); min-height: 0; max-height: 820px; display: grid; grid-template-rows: minmax(0, 1fr); grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.1fr); overflow: hidden; border: 1px solid var(--gray-150); border-radius: 8px; }
+.result-detail-cover { min-width: 0; min-height: 0; display: flex; flex-direction: column; padding: 20px; background: var(--gray-25); border-right: 1px solid var(--gray-150); }
 .result-detail-section-heading { min-height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .result-detail-section-heading > div { min-width: 0; display: flex; align-items: center; gap: 7px; }
 .result-detail-section-heading svg { flex: 0 0 auto; color: var(--main-700); }
@@ -3342,8 +3301,8 @@ const openVersions = async () => {
 @media (max-width: 900px) {
   .studio-header, .panel-heading { flex-direction: column; }
   .setup-grid, .brief-layout, .review-layout { grid-template-columns: 1fr; }
-  .result-detail-layout { height: auto; min-height: 0; max-height: calc(100vh - 210px); grid-template-columns: 1fr; overflow-y: auto; }
-  .result-detail-cover { min-height: 420px; border-right: 0; border-bottom: 1px solid var(--gray-150); }
+  .result-detail-layout { height: auto; min-height: 0; max-height: calc(100dvh - 210px); grid-template-columns: 1fr; grid-template-rows: auto auto; overflow-y: auto; }
+  .result-detail-cover { height: 420px; min-height: 0; border-right: 0; border-bottom: 1px solid var(--gray-150); }
   .result-detail-content { height: auto; display: block; overflow: visible; }
   .result-detail-body-section { overflow: visible; }
   .result-detail-body { padding-right: 0; overflow: visible; }
@@ -3357,7 +3316,7 @@ const openVersions = async () => {
   .workflow-narrative { margin-left: 0; }
   .completion-stage { padding: 0; }
   .ai-edit-message { max-width: 92%; }
-  .result-detail-cover { min-height: 340px; padding: 16px; }
+  .result-detail-cover { height: 340px; padding: 16px; }
   .result-detail-content { padding: 0 16px; }
   .result-detail-footer :deep(.ant-btn) { min-width: 0; flex: 1; }
   .template-grid, .dynamic-form { grid-template-columns: 1fr; }

@@ -78,6 +78,8 @@ class ModelCallTimeoutMiddleware(AgentMiddleware):
         context = request.runtime.context
         node_id = getattr(context, "_content_node_id", None)
         node_label = "策略选择" if node_id in {"select_creation_strategy", "reselect_creation_strategy"} else "正文生成"
+        if node_id == "semantic_review":
+            node_label = "内容表情与语义审核"
         controlled = bool(getattr(context, "_content_max_model_calls", None))
         call_number = int(getattr(context, "_content_model_calls", 0)) + 1
         timeout = self.timeout_seconds

@@ -65,9 +65,16 @@ async def test_seed_defaults_to_blueprint_first_without_overwriting_custom_templ
     db = SeedDatabase(previous_id, created_by)
     for _ in range(2):
         await _activate_v3_seed_data(db)
+        template = await db.get(IndustryTemplateVersion, "industry-decoration-v3")
+        assert template.default_workflow_version_id == expected_id
         for slug in INDUSTRY_CONFIG:
+            if slug == "decoration":
+                continue
             template = await db.get(IndustryTemplateVersion, f"industry-{slug}-v3")
-            assert template.default_workflow_version_id == expected_id
+            if previous_id:
+                assert template.default_workflow_version_id == previous_id
+            else:
+                assert template is None
         workflow = await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_PRICE_RECOVERY_ID)
         assert workflow.status == "published"
         assert workflow.definition_json == WORKFLOW_PRICE_RECOVERY

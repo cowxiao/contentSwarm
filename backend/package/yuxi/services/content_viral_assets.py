@@ -7,14 +7,14 @@ import re
 from pathlib import Path
 
 from fastapi import HTTPException
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import case, func, literal, or_, select
 
 from yuxi.content.catalog import INDUSTRY_CONFIG
 from yuxi.content.model.viral_assets import ViralArticleSource, ViralAssetImport, extract_article_records
 from yuxi.repositories.viral_asset_repository import ViralAssetRepository, asset_dict
 from yuxi.services.run_queue_service import get_arq_pool
 from yuxi.storage.postgres.models_content import ContentViralArticleVersion
-from yuxi.storage.postgres.models_knowledge import KnowledgeFile
+from yuxi.storage.postgres.models_knowledge import KnowledgeBase, KnowledgeFile
 
 
 def preparation_skill_hash() -> str:
@@ -27,6 +27,15 @@ async def accessible_asset_kbs(user) -> list[str]:
 
     databases = await knowledge_base.get_databases_by_uid(user.uid)
     return [item["kb_id"] for item in databases.get("databases", [])]
+
+
+async def require_viral_kb_type(db, kb_id: str) -> str:
+    content_type = await db.scalar(
+        select(KnowledgeBase.additional_params["viral_content_type"].as_string()).where(KnowledgeBase.kb_id == kb_id)
+    )
+    if content_type not in tuple(f"CT{i:02d}" for i in range(1, 8)):
+        raise HTTPException(422, "请先在知识库创建或编辑中绑定一个爆款创作类型")
+    return content_type
 
 
 def file_version(file: KnowledgeFile) -> str:
@@ -53,10 +62,19 @@ async def check_asset_source(db, asset: ContentViralArticleVersion) -> bool:
 
 
 async def search_ready_viral_assets(
-    db, user, *, industry_slug: str, query: str, kb_ids: list[str], limit: int, include_structure: bool = False
+    db,
+    user,
+    *,
+    industry_slug: str,
+    query: str,
+    kb_ids: list[str] | None = None,
+    limit: int,
+    include_structure: bool = False,
+    content_type_code: str | None = None,
 ):
-    """文章级词汇召回；只返回权限范围内的可用卡片，相关度不作为最终选择分数。"""
-    allowed = sorted(set(kb_ids) & set(await accessible_asset_kbs(user)))
+    """按类型发现权限内的参考库；事实相关度用于同类文章排序，最终适配由选择 Agent 判断。"""
+    accessible = set(await accessible_asset_kbs(user))
+    allowed = sorted(accessible if kb_ids is None else accessible & set(kb_ids))
     if not allowed:
         return []
     words = re.findall(r"[a-z0-9]+|[\u4e00-\u9fff]+", query.lower())
@@ -67,7 +85,7 @@ async def search_ready_viral_assets(
             for term in ([word] if word.isascii() or len(word) < 2 else [word[i : i + 2] for i in range(len(word) - 1)])
         )
     )[:64]
-    if not terms:
+    if not terms and not content_type_code:
         return []
     asset = ContentViralArticleVersion
     card = asset.prepared_json["reference_card"]
@@ -84,29 +102,37 @@ async def search_ready_viral_assets(
             card["goal"].as_string(),
             *(
                 [
-                    " ", asset.prepared_json["reference_blueprint"]["content_block_sequence"].as_string(),
-                    " ", asset.prepared_json["reference_blueprint"]["narrative_structure"].as_string(),
-                ] if include_structure else []
+                    " ",
+                    asset.prepared_json["reference_blueprint"]["content_block_sequence"].as_string(),
+                    " ",
+                    asset.prepared_json["reference_blueprint"]["narrative_structure"].as_string(),
+                ]
+                if include_structure
+                else []
             ),
         )
     )
-    relevance = sum(case((search_text.contains(term, autoescape=True), 1), else_=0) for term in terms)
+    relevance = sum((case((search_text.contains(term, autoescape=True), 1), else_=0) for term in terms), literal(0))
     rows = list(
         (
             await db.execute(
                 select(asset)
                 .join(KnowledgeFile, (KnowledgeFile.file_id == asset.file_id) & (KnowledgeFile.kb_id == asset.kb_id))
+                .join(KnowledgeBase, KnowledgeBase.kb_id == asset.kb_id)
                 .where(
+                    KnowledgeBase.additional_params["viral_content_type"].as_string()
+                    == card["content_type_code"].as_string(),
                     asset.kb_id.in_(allowed),
                     asset.industry_slug == industry_slug,
                     asset.status == "ready",
+                    *([card["content_type_code"].as_string() == content_type_code] if content_type_code else []),
                     asset.preparation_skill_hash == preparation_skill_hash(),
                     or_(
                         KnowledgeFile.content_hash.is_(None),
                         KnowledgeFile.content_hash == "",
                         KnowledgeFile.content_hash == asset.source_json["source_file_version"].as_string(),
                     ),
-                    relevance > 0,
+                    *([] if content_type_code else [relevance > 0]),
                 )
                 .order_by(relevance.desc(), asset.id)
                 .limit(limit * 2)
@@ -123,7 +149,18 @@ async def search_ready_viral_assets(
         item = asset_dict(row)
         card = item["reference_card"]
         item["reference_card"] = {
-            **{key: card[key] for key in ("audience", "scene", "goal", "channel", "summary")},
+            **{
+                key: card[key]
+                for key in (
+                    "audience",
+                    "scene",
+                    "goal",
+                    "channel",
+                    "summary",
+                    "content_type_code",
+                    "content_type_reason",
+                )
+            },
             "required_slots": [
                 {key: slot[key] for key in ("name", "description", "required")} for slot in card["required_slots"]
             ],
@@ -173,6 +210,7 @@ async def import_viral_assets(db, user, payload: ViralAssetImport):
 
     if payload.kb_id not in await accessible_asset_kbs(user):
         raise HTTPException(404, "知识库不存在或无权访问")
+    await require_viral_kb_type(db, payload.kb_id)
     if payload.industry_slug not in INDUSTRY_CONFIG:
         raise HTTPException(422, "行业不存在")
     file = (

@@ -6,6 +6,8 @@ import { contentApi } from '@/apis/content_api'
 import { databaseApi } from '@/apis/knowledge_api'
 import { useUserStore } from '@/stores/user'
 
+import { CREATION_TYPE_NAMES as creationTypeNames, CREATION_TYPE_OPTIONS } from '@/utils/content_creation_types'
+
 const props = defineProps({ industries: { type: Array, default: () => [] } })
 const userStore = useUserStore()
 const items = ref([])
@@ -16,6 +18,13 @@ const importOpen = ref(false)
 const detail = ref(null)
 const databases = ref([])
 const files = ref([])
+const importType = ref()
+const mappedDatabases = computed(() => databases.value.filter(item => item.contentType === importType.value))
+function changeImportType() {
+  form.kb_id = undefined
+  form.file_ids = []
+  files.value = []
+}
 const industryFilter = ref()
 const form = reactive({ kb_id: undefined, file_ids: [] })
 const statusNames = { pending: '等待准备', running: '准备中', ready: '可用', completed: '文章识别完成', needs_review: '需要处理', failed: '准备失败', invalidated: '已失效' }
@@ -39,7 +48,8 @@ async function refresh() {
 async function openImport() {
   try {
     const result = await databaseApi.getDatabases()
-    databases.value = Object.values(result.databases || result).map(item => ({ value: item.kb_id, label: item.name }))
+    databases.value = Object.values(result.databases || result).map(item => ({ value: item.kb_id, label: item.name, contentType: item.additional_params?.viral_content_type }))
+    changeImportType()
     importOpen.value = true
   } catch (error) { message.error(error.message || '读取知识库失败') }
 }
@@ -53,7 +63,7 @@ async function loadFiles(kbId) {
   } catch (error) { message.error(error.message || '读取原文文件失败') }
 }
 async function submit() {
-  if (!form.kb_id || !form.file_ids.length) { message.warning('请选择需要作为参考的文件'); return }
+  if (!importType.value || !form.kb_id || !form.file_ids.length) { message.warning('请选择需要作为参考的文件'); return }
   submitting.value = true
   try {
     const result = await contentApi.prepareViralFiles({ ...form })
@@ -111,7 +121,9 @@ onUnmounted(() => { disposed = true; clearTimeout(refreshTimer) })
     <a-modal v-model:open="importOpen" title="从已有文件准备参考" :confirm-loading="submitting" ok-text="自动准备" @ok="submit">
       <p>选择已解析的文件，系统自动识别行业、标题和完整正文，并准备参考卡与结构蓝图。</p>
       <a-form layout="vertical">
-        <a-form-item label="知识库"><a-select v-model:value="form.kb_id" :options="databases" @change="loadFiles" /></a-form-item>
+        <a-form-item label="创作类型"><a-select v-model:value="importType" :options="CREATION_TYPE_OPTIONS" @change="changeImportType" /></a-form-item>
+        <a-form-item label="爆款知识库"><a-select v-model:value="form.kb_id" :options="mappedDatabases" :disabled="!importType" placeholder="请选择同类型知识库" @change="loadFiles" /></a-form-item>
+        <p v-if="importType && !mappedDatabases.length">没有对应的爆款知识库，请在知识库创建或编辑时绑定该创作类型。</p>
         <a-form-item label="原文文件"><a-select v-model:value="form.file_ids" mode="multiple" :options="files" show-search option-filter-prop="label" /></a-form-item>
       </a-form>
     </a-modal>
@@ -125,6 +137,8 @@ onUnmounted(() => { disposed = true; clearTimeout(refreshTimer) })
         <template v-if="detail.reference_card">
           <h4>参考卡 · 判断是否适合本次创作</h4>
           <a-descriptions bordered :column="1" size="small">
+            <a-descriptions-item label="创作类型">{{ creationTypeNames[detail.reference_card.content_type_code] || '待重新准备分类' }}</a-descriptions-item>
+            <a-descriptions-item label="分类依据">{{ detail.reference_card.content_type_reason }}</a-descriptions-item>
             <a-descriptions-item label="目标受众">{{ detail.reference_card.audience }}</a-descriptions-item>
             <a-descriptions-item label="使用场景">{{ detail.reference_card.scene }}</a-descriptions-item>
             <a-descriptions-item label="内容目标">{{ detail.reference_card.goal }}</a-descriptions-item>

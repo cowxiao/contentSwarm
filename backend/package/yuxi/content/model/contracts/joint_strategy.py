@@ -138,6 +138,10 @@ def validate_joint_strategy(payload, inputs: dict[str, Any]) -> JointStrategyDec
     if reference.selected_asset_id != winner.candidate_id:
         raise ValueError("应选择最高分参考并遵守同分规则")
     selected = pool[reference.selected_asset_id]
+    if candidates["industry_slug"] == "decoration" and (
+        selected["reference_card"].get("content_type_code") != result.strategy.direction_code
+    ):
+        raise ValueError("爆款参考创作类型必须与所选创作类型一致")
     if reference.source_hash != selected["source_hash"]:
         raise ValueError("参考原文版本不一致")
     slots = {slot["name"]: slot for slot in selected["reference_card"]["required_slots"]}

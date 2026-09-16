@@ -53,7 +53,8 @@ def build_strategy_candidates(
             if item.get("enabled", True)
             and item.get("compatibility") != "disabled"
             and (not item.get("industry_scope") or industry_slug in item["industry_scope"])
-            and (auto_direction or mode != "direction_scoped" or direction in item.get("content_type_codes", []))
+            and (mode != "direction_scoped" or (auto_direction and not direction)
+                 or direction in item.get("content_type_codes", []))
         ),
         key=lambda item: str(item.get("id") or item.get("code")),
     )

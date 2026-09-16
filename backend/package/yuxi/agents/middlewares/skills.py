@@ -534,6 +534,10 @@ class SkillsMiddleware(AgentMiddleware):
                         if mode == "original"
                         else instructions[:original_start] + instructions[rewrite_start:]
                     )
+                if slug == "content-reviewer":
+                    mode = (getattr(node_input, "payload", {}) or {}).get("review_scope", "full")
+                    if mode in {"emoji", "expression"}:
+                        instructions = instructions.split("## 完整审核", 1)[0]
                 applied = getattr(runtime_context, "_content_applied_skill_instructions", {})
                 applied[slug] = {
                     "mode": mode,

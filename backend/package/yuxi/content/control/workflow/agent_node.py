@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import replace
 from typing import Any
 
@@ -253,19 +254,6 @@ class AgentNodeHandler:
                 }
             }
 
-        if node["id"] == "semantic_review" and not bool(
-            (state.get("runtime_config_snapshot") or {}).get("strict_semantic_review")
-        ):
-            return {
-                "review_report": {
-                    "status": "passed",
-                    "checks": [],
-                    "evidence_conflicts": [],
-                    "skipped": True,
-                    "skip_reason": "普通首稿已通过确定性校验，语义审核仅在严格审核模式下执行",
-                }
-            }
-
         if node["id"] == "rank_formula_candidates":
             valid_pairs = (state.get("formula_candidate_pool") or {}).get("valid_formula_pairs") or []
             if len(valid_pairs) == 1:
@@ -318,6 +306,10 @@ class AgentNodeHandler:
         visual_material = (state.get("runtime_config_snapshot") or {}).get("visual_material") or {}
         required_source_asset_ids = [visual_material["image_asset_id"]] if visual_material.get("image_asset_id") else []
         locked_values = {
+            "require_emoji_review": node["id"] == "semantic_review",
+            "require_persona_review": node["id"] == "semantic_review",
+            "require_composition_review": node["id"] == "semantic_review"
+            and bool((state.get("strategy_snapshot") or {}).get("direction_blueprint")),
             "creation_mode": (state.get("runtime_config_snapshot") or {}).get("creation_mode", "original"),
             "selected_title": (state.get("selected_title") or {}).get("text"),
             "source_asset_ids": [
@@ -328,6 +320,28 @@ class AgentNodeHandler:
             "visual_plan_hash": (state.get("visual_plan") or {}).get("plan_hash"),
             "state_version": int(state.get("state_version") or 0),
         }
+        blocked_review_codes = {
+            item.get("code") for item in (state.get("review_report") or {}).get("checks", [])
+            if item.get("status") == "blocked"
+        }
+        if (
+            node["id"] == "generate_content"
+            and (state.get("validation_report") or {}).get("status") in {"passed", "warning"}
+            and blocked_review_codes
+            and blocked_review_codes <= {"EMOJI_COVERAGE", "EMOJI_APPROPRIATENESS", "EMOJI_RESTRICTIONS"}
+        ):
+            locked_values["emoji_repair_body"] = state["content_draft"]["body"]
+        if (
+            node["id"] == "generate_content"
+            and (state.get("validation_report") or {}).get("status") in {"passed", "warning"}
+            and blocked_review_codes & {"PERSONA_OPENING", "PERSONA_CLOSING"}
+            and blocked_review_codes <= {
+                "PERSONA_OPENING", "PERSONA_CLOSING", "EMOJI_COVERAGE",
+                "EMOJI_APPROPRIATENESS", "EMOJI_RESTRICTIONS",
+            }
+        ):
+            paragraphs = [part.strip() for part in re.split(r"\n\s*\n", state["content_draft"]["body"]) if part.strip()]
+            locked_values["persona_repair_middle"] = paragraphs[1:-1]
         assembly_state = state
         if node["id"] == "plan_visuals":
             from yuxi.content.control.visual_template_fields import missing_required_template_fields

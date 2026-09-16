@@ -40,6 +40,8 @@ def prepared(article):
         "status": "prepared",
         "source_hash": article.source_hash,
         "reference_card": {
+            "content_type_code": "CT06",
+            "content_type_reason": "主体解释施工动线，依据正文锚点",
             "audience": "装修业主",
             "scene": "厨房布局",
             "goal": "经验分享",
@@ -142,3 +144,43 @@ def test_single_layout_does_not_merge_multiple_articles():
 def test_incomplete_table_row_is_rejected_instead_of_silently_dropped():
     with pytest.raises(ValueError, match="不完整"):
         extract_article_records("title,body\n第一篇,\n", layout="csv", title_column="title", body_column="body")
+
+
+@pytest.mark.parametrize(
+    "field,value", [("content_type_code", None), ("content_type_code", "价格营销"), ("content_type_reason", "")]
+)
+def test_decoration_reference_requires_exact_type_and_reason(field, value):
+    article = source()
+    payload = prepared(article)
+    payload["reference_card"][field] = value
+    with pytest.raises(ValueError):
+        validate_prepared_asset(payload, article)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", [f"CT{i:02d}" for i in range(1, 8)])
+async def test_reference_search_filters_type_before_ranking_and_limit(monkeypatch, code):
+    from types import SimpleNamespace
+    from sqlalchemy.dialects import postgresql
+    from yuxi.services import content_viral_assets
+
+    async def allowed(_user):
+        return ["kb-test"]
+
+    monkeypatch.setattr(content_viral_assets, "accessible_asset_kbs", allowed)
+    queries = []
+
+    class DB:
+        async def execute(self, statement):
+            queries.append(statement)
+            return SimpleNamespace(scalars=lambda: [])
+
+    result = await content_viral_assets.search_ready_viral_assets(
+        DB(), SimpleNamespace(uid="user"), industry_slug="decoration", query="长沙装修报价",
+        kb_ids=["kb-test"], limit=5, content_type_code=code,
+    )
+    assert result == []
+    sql = str(queries[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    where = sql.split("WHERE", 1)[1].split("ORDER BY", 1)[0]
+    assert "content_type_code" in where and code in where
+    assert "industry_slug = 'decoration'" in where

@@ -5,6 +5,43 @@ description: 审核 Yuxi 生成内容的创作手法贯穿、公式执行、事�
 
 # 内容审核
 
+## 审核范围与表达验收
+
+先读取 `payload.review_scope`：`expression` 是默认普通模式，审核正文表情与首尾人设表达；`emoji` 是历史范围标识，按相同表达规则执行；`full` 执行下文完整审核，也包含表情与人设验收。普通范围核对人设句的事实依据及下述锁定创作类型/组合要求，不重审无关业务事实。所有范围都必须返回下面三项表情检查和三项人设检查，不能用空 checks 代替实际审核：
+
+- `EMOJI_COVERAGE`：按正文已有信息检查情绪/判断、数据类别、独立事项、提醒和互动的适用功能。报价清单的拆除、泥工、水电、吊顶、油漆等独立工种逐项导航；面积和费用是不同数据类别。同类金额可由清晰的费用分组导航，不要求每个数字都贴钱袋。不适用的功能无需补造。
+- `EMOJI_APPROPRIATENESS`：符号紧邻实际语义，专业人设使用贴切图标；检查误配、无意义重复、连续堆叠或挡住阅读的问题。工种列表连续行首图标属于有效导航，不能仅因连续就删除；痛点情绪不能由数据图标代替。
+- `EMOJI_RESTRICTIONS`：读取 `channel_profile`、`persona_profile` 和 `content_brief` 中用户的明确要求。渠道或用户禁用时，应无 Emoji；少量/克制要求优先，允许清晰同类分组，不强制逐个标记。无明确限制时，参考蓝图“仅一个”“无表情”等只是参考文章的描述，绝不能视为成稿数量上限。
+
+三项分别返回 `passed` 或 `blocked`；违反明确禁用、遗漏适用功能或有干扰阅读的乱配/堆叠时必须阻断，不以 warning 放行。不适用或已满足时返回 passed，并在 message 说明实际检查依据。禁用时前两项按“禁用，无需覆盖”判定，不产生相互矛盾的补表情要求。
+
+阻断项的 `location` 引用具体原文短语或条目；`suggestion` 给出应添加/删除/移动的 Emoji 和落点，不指定全篇数量。只改符号及必要空格，保留原文字、金额、单位、标点、段落顺序、编号、标题和证据引用。上述仅表情建议只改符号；人设阻断允许修正必要文字。普通范围完成表情、人设及适用的组合检查后直接提交，不执行下文完整审核。
+
+通过 `submit_content_node_result` 返回 `status`、`checks`、`evidence_conflicts`。每项检查包含 `code`、`status`、`location`、`message`、`suggestion`、`evidence_ids`，不用 level。无引用时 `evidence_ids=[]`；人设缺失不等于事实冲突；只有确有证据冲突时才填 `evidence_conflicts`，否则为 `[]`。任一项 blocked 则总状态 blocked，否则 passed；不得只写分析文字而不提交结果。
+
+### 首尾人设验收（默认启用）
+
+读取 `persona_profile`、`content_brief.persona`、用户需求中的嵌套人设及允许用于正文的冻结证据。参考文章不是作者人设证据。以下三项必须分别返回 passed 或 blocked，不以 warning 放行：
+
+- `PERSONA_OPENING`：检查正文首个非空自然段（不含标题）是否自然融入与主题相关的已知身份，以及资料支持的经验或擅长领域，并承接读者问题。不要求固定句型或全部人设字段；只有部分资料时按已有信息审核。仅有城市项目背景不能算作者身份，孤立履历堆砌不能算主题关联。
+- `PERSONA_CLOSING`：检查正文最后一个非空自然段（不含话题标签）是否用已有服务优势承接本篇，并给出符合真实服务范围和渠道要求的行动邀请。首尾重复自我介绍或空泛“欢迎咨询”需修正；没有优势资料时，已有角色/服务范围的自然承接即可，不要求虚构优势或免费服务。
+- `PERSONA_GROUNDING`：核对全文身份、年限、城市服务范围、技能、团队、服务优势、亲历与承诺是否有当前资料依据；不要把案例城市当作服务城市、把擅长某工种扩大为本案亲自施工、把语气偏好写成客户评价。发现无依据的人设事实或首尾矛盾必须阻断，指明应删除或收窄的原句及可用资料依据。
+
+用户明确要求不自我介绍、第三人称、纯清单等形式，渠道/锁定结构不允许，或没有可用人设事实时，对相应首尾项返回 passed 并说明具体不适用原因；用户禁止营销/互动时不要求 CTA，但仍核对已有身份事实。普通模式默认审核，无需用户开启严格审核。
+
+阻断时 `location` 指向实际首段、末段或无依据的具体原句，`suggestion` 说明用哪些已提供的人设事实如何定点修正，不新增履历、优势和承诺；未涉及的正文、标题、金额、单位和结构保留。缺少首尾表达时指出缺失位置，不能建议重写整篇。三项人设与三项表情一起决定总状态，任一 blocked 都必须回修。
+
+### 所选创作类型与表格组合验收（默认执行）
+
+当 strategy_snapshot.direction_blueprint 存在时，普通范围也必须增加以下两项 passed/blocked 检查，不得以“只审核表情人设”跳过。不存在时不要求这两项。
+
+- CREATION_TYPE_ALIGNMENT：核对 content_brief.content_type_code（若有）、strategy_snapshot.content_direction、标题/正文公式及参考类型一致。精确区分项目单价、单价+面积、工种总价、人工+辅材，不能因同属价格营销就混用。以锁定规则快照为依据，不自选其他类型公式。
+- COMPOSITION_ALIGNMENT：逐项读取 direction_blueprint.layer_sequence 和 phrase_composition，在实际正文中定位每层、顺序及对应词组组别。检查 selection、min_groups、max_groups、allowed_groups：全取、随机组数、固定组别均按本行执行；“随机取”只能从有事实支持的候选中选，缺少所需材料时阻断并明确缺失，不能虚构来凑组数。项目单价没有独立证据层；施工报价必须使用真实报价，工艺展示/日常工作使用已有工地照片或工艺节点依据。词组组合不是把层名称作为小标题堆在成稿中。
+
+爆款参考只提供同类型的表达和排版参考；与所选类型的层级、组别冲突时，以锁定类型表为准。location 写明实际段落/缺失层，suggestion 给出本行要求及具体修正或缺料说明。上述两项加入总状态，阻断时复用既有正文回修，不能由表情检查通过而放行。无需另建审核节点。
+
+## 完整审核
+
 1. 当前节点 `payload` 必须包含 `content_draft`、`selected_title`、`content_outline`、`strategy_snapshot`、`validation_report` 和 `evidence_bundle`；缺少任一必需输入时直接报告契约错误，不得猜测补齐。
 2. 先确认 `validation_report.status` 为 `passed` 或 `warning`。若它为 `blocked`，返回 `REVIEW_CONTRACT_INVALID`，因为确定性阻断不应进入本节点。
 3. 对照 `strategy_snapshot` 检查创作手法、标题公式和正文结构，对照 ContentBrief 与 EvidenceBundle 检查事实、人设、语气和来源。
@@ -37,6 +74,6 @@ description: 审核 Yuxi 生成内容的创作手法贯穿、公式执行、事�
 - 检查工长身份、案例、施工过程、优势、承诺、结果和客户反馈均有冻结证据；相关优势超过三项，或图片被用于推断不可见事实时阻断。
 - CTA 必须具体且符合当前业务，不得包含无证据的免费、限时、最低价、质保或响应承诺。
 
-允许用于定点回修的阻断 code 为 `TITLE_FORMULA_MISMATCH`、`TITLE_FACT_UNSUPPORTED`、`BODY_FORMULA_MISMATCH`、`CONTENT_STRUCTURE_MISMATCH`、`PERSONA_TONE_MISMATCH`、`PERSONA_STYLE_MISMATCH`、`FACT_CHECK_FAILED`、`FACT_INCONSISTENT`。其他阻断 code 会被视为审核契约错误并停止工作流。
+允许用于定点回修的阻断 code 为 `CREATION_TYPE_ALIGNMENT`、`COMPOSITION_ALIGNMENT`、`PERSONA_OPENING`、`PERSONA_CLOSING`、`PERSONA_GROUNDING`、`EMOJI_COVERAGE`、`EMOJI_APPROPRIATENESS`、`EMOJI_RESTRICTIONS`、`TITLE_FORMULA_MISMATCH`、`TITLE_FACT_UNSUPPORTED`、`BODY_FORMULA_MISMATCH`、`CONTENT_STRUCTURE_MISMATCH`、`PERSONA_TONE_MISMATCH`、`PERSONA_STYLE_MISMATCH`、`FACT_CHECK_FAILED`、`FACT_INCONSISTENT`。其他阻断 code 会被视为审核契约错误并停止工作流。
 
 不得用单一综合分数替代问题列表，不得修改原内容。

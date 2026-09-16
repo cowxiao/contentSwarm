@@ -35,7 +35,7 @@ const uniqueIndustries = computed(() => industries.value.filter((item, index, it
 ))
 const industryPacks = ref([])
 const showPackHistory = ref(false)
-const visibleIndustryPacks = computed(() => industryPacks.value.filter(item => showPackHistory.value || (item.schema_version === 3 && item.status === 'published')))
+const visibleIndustryPacks = computed(() => industryPacks.value.filter(item => item.slug === 'decoration' && (showPackHistory.value || (item.schema_version === 3 && item.status === 'published'))))
 const workflows = ref([])
 const activeTab = ref('methods')
 const selectedVersionId = ref('')
@@ -165,7 +165,7 @@ const load = async (force = false, preferredVersionId = '') => {
       contentApi.listWorkflowTemplates()
     ])
     ruleVersions.value = rules.items || []
-    industries.value = templates.items || []
+    industries.value = (templates.items || []).filter(item => item.slug === 'decoration')
     industryPacks.value = packs.items || []
     workflows.value = flowList.items || []
     const targetId = preferredVersionId
@@ -549,11 +549,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
     <section class="rule-card" :class="{ 'is-loading': loading }">
       <div class="industry-scope-bar">
         <label>当前行业规则</label>
-        <a-select v-model:value="industryFilter" aria-label="当前规则行业" style="width: 220px" @change="searchText = ''">
-          <a-select-option value="">全部行业</a-select-option>
-          <a-select-option v-for="industry in uniqueIndustries" :key="industry.slug" :value="industry.slug">{{ industry.slug === 'decoration' ? '装修工长' : industry.name }}</a-select-option>
-        </a-select>
-        <span>手法、标题、正文和组合均按行业隔离显示。</span>
+        <strong>装修与家居</strong>
+        <span>仅展示装修与家居适用的手法、标题、正文和组合规则。</span>
       </div>
       <a-tabs v-model:activeKey="activeTab" @change="searchText = ''">
         <a-tab-pane key="methods" :tab="`创作手法 ${scopedMethods.length}`">

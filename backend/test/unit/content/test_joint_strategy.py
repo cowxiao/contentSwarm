@@ -20,7 +20,10 @@ def joint_example(mode="viral_rewrite"):
             {
                 "id": code,
                 "source_hash": code * 64,
-                "reference_card": {"required_slots": [{"name": "pain", "required": True}]},
+                "reference_card": {
+                    "content_type_code": strategy["direction_code"],
+                    "required_slots": [{"name": "pain", "required": True}],
+                },
             }
             for code in ("a", "b")
         ],
@@ -196,3 +199,11 @@ async def test_locked_prepared_reference_passes_existing_evidence_contract(monke
     assert reference["metadata"]["selection_basis"]["prepared_reference_decision"]["selected_asset_id"] == "b"
     assert reference["metadata"]["reference_blueprint"] == asset.prepared_json["reference_blueprint"]
     assert source().body not in str(merged)
+
+
+def test_reference_cannot_cross_selected_creation_type():
+    inputs, result = joint_example()
+    inputs["strategy_candidates"]["industry_slug"] = "decoration"
+    inputs["reference_candidates"][1]["reference_card"]["content_type_code"] = "CT07"
+    with pytest.raises(ValueError, match="爆款参考创作类型"):
+        validate_joint_strategy(result, inputs)

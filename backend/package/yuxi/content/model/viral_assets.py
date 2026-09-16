@@ -56,6 +56,8 @@ class ReferenceSlot(ViralContract):
 
 
 class ReferenceCard(ViralContract):
+    content_type_code: Literal["CT01", "CT02", "CT03", "CT04", "CT05", "CT06", "CT07"] | None = None
+    content_type_reason: str = ""
     audience: str = Field(min_length=1)
     scene: str = Field(min_length=1)
     goal: str = Field(min_length=1)
@@ -141,6 +143,8 @@ def validate_prepared_asset(payload: dict[str, Any], source: ViralArticleSource)
     }:
         raise ValueError("蓝图列表类型无效")
     card = result.reference_card
+    if source.industry_slug == "decoration" and (not card.content_type_code or not card.content_type_reason):
+        raise ValueError("装修爆款必须标注创作类型及原文分类依据")
     names = [slot.name for slot in card.required_slots]
     if len(names) != len(set(names)):
         raise ValueError("参考事实槽位名称不能重复")

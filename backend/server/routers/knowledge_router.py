@@ -237,6 +237,7 @@ async def get_accessible_databases(current_user: User = Depends(get_required_use
                 "kb_id": db.get("kb_id"),
                 "description": db.get("description", ""),
                 "created_by": db.get("created_by"),
+                "viral_content_type": (db.get("additional_params") or {}).get("viral_content_type"),
             }
             for db in databases.get("databases", [])
         ]

@@ -35,6 +35,16 @@ class ContentNodeInputAssembler:
             )
         raw_payload = {field: state[field] for field in required_fields}
         raw_payload.update({field: state.get(field) for field in optional_fields})
+        if contract_name == "SemanticReviewInputV1":
+            raw_payload.update(
+                review_scope=(
+                    "full"
+                    if (state.get("runtime_config_snapshot") or {}).get("strict_semantic_review")
+                    else "expression"
+                ),
+                channel_profile=state.get("channel_profile") or {},
+                persona_profile=state.get("persona_profile") or {},
+            )
         try:
             payload = get_input_contract_model(contract_name).model_validate(raw_payload).model_dump(mode="json")
         except ValidationError as exc:

@@ -592,9 +592,15 @@ async def test_merge_research_excludes_unconfirmed_external_high_risk_evidence(m
 
 
 @pytest.mark.asyncio
-async def test_semantic_review_skips_model_for_normal_first_draft():
+async def test_semantic_review_calls_agent_for_normal_first_draft(monkeypatch):
+    from test.unit.content.test_content_v3_node_inputs import _state
+    from yuxi.services.agent_delegation_service import AgentDelegationService
+
     node_run = SimpleNamespace(id="node-run-1")
-    task = SimpleNamespace(id="task-1")
+    task = SimpleNamespace(
+        id="task-1", industry_pack_version_id="pack", channel_profile_version_id="channel",
+        persona_profile_version_id=None, rule_version_id="rules-v3",
+    )
     user = SimpleNamespace(uid="user-1")
 
     class Result:
@@ -612,15 +618,26 @@ async def test_semantic_review_skips_model_for_normal_first_draft():
         async def execute(self, _statement):
             return Result()
 
+    captured = []
+
+    async def delegate(self, request):
+        captured.append(request)
+        return SimpleNamespace(output={"status": "passed", "checks": []}, delegated_agent_run_id="review-run")
+
+    monkeypatch.setattr(AgentDelegationService, "execute", delegate)
     result = await AgentNodeHandler().execute(
         db=FakeDB(),
-        node={"id": "semantic_review"},
-        state={"task_id": "task-1", "uid": "user-1", "runtime_config_snapshot": {}},
+        node=next(node for node in WORKFLOW_V3["nodes"] if node["id"] == "semantic_review"),
+        state={**_state(), "task_id": "task-1", "uid": "user-1", "run_id": "run-1", "runtime_config_snapshot": {}},
         node_run_id="node-run-1",
     )
 
     assert result["review_report"]["status"] == "passed"
-    assert result["review_report"]["skipped"] is True
+    assert len(captured) == 1
+    assert captured[0].input_payload["review_scope"] == "expression"
+    assert captured[0].domain_context.require_emoji_review is True
+    assert captured[0].domain_context.require_persona_review is True
+    assert result["delegated_agent_runs"]["semantic_review"] == "review-run"
 
 
 @pytest.mark.asyncio

@@ -21,8 +21,6 @@ from yuxi.storage.postgres.models_business import User
 
 
 async def prepare_strategy_candidates(*, db, state, node_run_id):
-    from yuxi.services.agent_runtime_service import resolve_agent_runtime_context
-
     del node_run_id
     from yuxi.content.v3.joint_workflow import BLUEPRINT_FIRST_WORKFLOW_IDS
 
@@ -65,7 +63,6 @@ async def prepare_strategy_candidates(*, db, state, node_run_id):
     queries = []
     references = []
     if state["runtime_config_snapshot"].get("creation_mode") == "viral_rewrite":
-        context = await resolve_agent_runtime_context(db=db, user=user, bound_agent_id="content-joint-strategy-agent")
         brief = state["content_brief"]
         query = " ".join(
             str(brief.get(key) or "")
@@ -80,10 +77,19 @@ async def prepare_strategy_candidates(*, db, state, node_run_id):
             user,
             industry_slug=catalog["industry_slug"],
             query=query,
-            kb_ids=list(context.knowledges or []),
             limit=catalog["reference_candidate_limit"],
             include_structure=auto_direction,
+            content_type_code=catalog.get("direction_code"),
         )
+        if catalog.get("direction_code") and not references:
+            from yuxi.content.control.errors import ContentApplicationError
+
+            raise ContentApplicationError(
+                "CONTENT_REFERENCE_TYPE_MISSING",
+                f"未找到创作类型 {catalog['direction_code']} 对应的已准备爆款，"
+                "请在有权限访问的知识库中绑定该创作类型，并准备同类型参考文章",
+                "invalid",
+            )
     return {
         "strategy_catalog": catalog,
         "strategy_candidates": candidates,

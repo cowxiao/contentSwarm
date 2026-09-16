@@ -209,7 +209,8 @@ def test_unified_generation_input_exposes_locked_strategy_and_previous_validatio
 
 
 @pytest.mark.unit
-def test_semantic_review_input_contains_all_review_upstream_outputs():
+@pytest.mark.parametrize("strict", [False, True])
+def test_semantic_review_input_contains_all_review_upstream_outputs(strict):
     node = {
         "id": "semantic_review",
         "input_contract": "SemanticReviewInputV1",
@@ -226,12 +227,21 @@ def test_semantic_review_input_contains_all_review_upstream_outputs():
         "optional_state_inputs": ["persona_diff"],
     }
 
-    assembly = ContentNodeInputAssembler.build(node=node, state=_state())
+    state = {
+        **_state(),
+        "runtime_config_snapshot": {"strict_semantic_review": strict},
+        "channel_profile": {"body_constraints": {"emoji_allowed": False}},
+        "persona_profile": {"tone": "专业克制"},
+    }
+    assembly = ContentNodeInputAssembler.build(node=node, state=state)
 
     assert assembly.payload["content_draft"]["body"] == "正文"
     assert assembly.payload["validation_report"]["status"] == "passed"
     assert assembly.payload["strategy_snapshot"]["snapshot_hash"] == STRATEGY["snapshot_hash"]
     assert assembly.payload["persona_diff"] == {"change_summary": []}
+    assert assembly.payload["review_scope"] == ("full" if strict else "expression")
+    assert assembly.payload["channel_profile"] == state["channel_profile"]
+    assert assembly.payload["persona_profile"] == state["persona_profile"]
 
 
 @pytest.mark.unit

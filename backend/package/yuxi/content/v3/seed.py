@@ -346,6 +346,8 @@ async def _ensure_all_industry_packs_v3(db: AsyncSession) -> None:
 
     now = utc_now_naive()
     for slug, config in INDUSTRY_CONFIG.items():
+        if slug != "decoration":
+            continue
         source = source_by_slug[slug]
         aliases = {item["code"]: alias for item, alias in zip(CONTENT_TYPES, config["aliases"], strict=True)}
         if slug == "decoration":
@@ -518,6 +520,7 @@ async def _activate_v3_seed_data(db: AsyncSession) -> None:
                 select(IndustryContentPackVersion).where(
                     IndustryContentPackVersion.schema_version == 3,
                     IndustryContentPackVersion.created_by == "system",
+                    IndustryContentPackVersion.slug == "decoration",
                 )
             )
         ).scalars()
@@ -530,6 +533,8 @@ async def _activate_v3_seed_data(db: AsyncSession) -> None:
 
     industries = {item["slug"]: item for item in INDUSTRIES}
     for slug, config in INDUSTRY_CONFIG.items():
+        if slug != "decoration":
+            continue
         if slug not in packs_by_slug:
             raise RuntimeError(f"V3 行业包缺失: {slug}")
         template_id = f"industry-{slug}-v3"

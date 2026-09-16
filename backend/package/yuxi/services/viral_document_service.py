@@ -11,7 +11,12 @@ from sqlalchemy.dialects.postgresql import insert
 
 from yuxi.content.catalog import INDUSTRY_CONFIG
 from yuxi.content.model.viral_document import document_units, xlsx_document_units
-from yuxi.services.content_viral_assets import accessible_asset_kbs, file_version, preparation_skill_hash
+from yuxi.services.content_viral_assets import (
+    accessible_asset_kbs,
+    file_version,
+    preparation_skill_hash,
+    require_viral_kb_type,
+)
 from yuxi.services.run_queue_service import get_arq_pool
 from yuxi.storage.postgres.models_content import ContentViralArticleVersion, ContentViralFileJob
 from yuxi.storage.postgres.models_knowledge import KnowledgeBase, KnowledgeFile
@@ -89,6 +94,7 @@ async def schedule_reference_file(db, user, kb_id, file_id, *, retry=False):
 
     if kb_id not in await accessible_asset_kbs(user):
         raise HTTPException(404, "知识库不存在或无权访问")
+    await require_viral_kb_type(db, kb_id)
     file = (
         await db.execute(
             select(KnowledgeFile).where(

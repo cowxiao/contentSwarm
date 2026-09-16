@@ -100,10 +100,8 @@ async def test_retrieval_uses_fact_values_and_returns_bounded_blueprint_cards(mo
     monkeypatch.setattr(joint_strategy.PostgresStrategyPreviewRepository, "load_candidates", loader)
     search = AsyncMock(return_value=[{"id": "case-a"}])
     monkeypatch.setattr(joint_strategy, "search_ready_viral_assets", search)
-    monkeypatch.setattr(
-        "yuxi.services.agent_runtime_service.resolve_agent_runtime_context",
-        AsyncMock(return_value=SimpleNamespace(knowledges=["kb"])),
-    )
+    runtime_loader = AsyncMock(side_effect=AssertionError("自动爆款匹配不应读取智能体手动绑定知识库"))
+    monkeypatch.setattr("yuxi.services.agent_runtime_service.resolve_agent_runtime_context", runtime_loader)
     db = SimpleNamespace(
         execute=AsyncMock(
             return_value=SimpleNamespace(
@@ -132,6 +130,8 @@ async def test_retrieval_uses_fact_values_and_returns_bounded_blueprint_cards(mo
     assert search.call_args.kwargs["query"] == "真实改造过程"
     assert search.call_args.kwargs["include_structure"] is True
     assert search.call_count == 1
+    assert "kb_ids" not in search.call_args.kwargs
+    runtime_loader.assert_not_called()
     assert result["strategy_candidates"]["available_input_paths"] == [
         "evidence_bundle.items.0.value" if uploaded_only else "content_brief.form_values.process"
     ]
@@ -149,3 +149,19 @@ def test_disabled_direction_formulas_do_not_block_other_directions():
         auto_direction=True,
     )
     assert [item["code"] for item in candidates["direction_options"]] == ["CT01"]
+
+
+@pytest.mark.parametrize("direction", ["CT01", "CT02"])
+def test_explicit_creation_type_limits_blueprint_candidates(direction):
+    bundle = rule_bundle()
+    bundle["title_formulas"][2]["enabled"] = True
+    bundle["content_types"] = [{"code": "CT01", "name": "案例"}, {"code": "CT02", "name": "报价"}]
+    candidates = build_strategy_candidates(
+        bundle,
+        industry_slug="decoration",
+        direction_code=direction,
+        rule_version_id="v1",
+        auto_direction=True,
+    )
+    assert {item["code"] for item in candidates["direction_options"]} == {direction}
+    assert all(direction in item["content_type_codes"] for item in candidates["source_rules"])

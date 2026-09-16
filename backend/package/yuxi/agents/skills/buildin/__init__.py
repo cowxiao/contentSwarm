@@ -26,13 +26,13 @@ BUILTIN_SKILLS: list[BuiltinSkillSpec] = [
     ),
     BuiltinSkillSpec(
         slug="content-joint-strategy-selector",
-        version="1.6.1",
+        version="1.6.2",
         source_dir=_SKILLS_ROOT / "content-joint-strategy-selector",
         description="按行业规则一次选择公式、独立手法及已准备的文章级参考。",
     ),
     BuiltinSkillSpec(
         slug="prepared-viral-reference-selector",
-        version="1.3.0",
+        version="1.3.1",
         source_dir=_SKILLS_ROOT / "prepared-viral-reference-selector",
         description="基于本次输入评分选择已准备参考卡，不阅读全文或重新提取蓝图。",
     ),
@@ -50,7 +50,7 @@ BUILTIN_SKILLS: list[BuiltinSkillSpec] = [
     ),
     BuiltinSkillSpec(
         slug="viral-asset-preparer",
-        version="1.1.0",
+        version="1.3.0",
         source_dir=_SKILLS_ROOT / "viral-asset-preparer",
         description="在入库时核验单篇完整原文并生成有原文锚点的参考卡和结构蓝图。",
     ),
@@ -137,7 +137,7 @@ BUILTIN_SKILLS: list[BuiltinSkillSpec] = [
         slug="content-human-expression",
         source_dir=_SKILLS_ROOT / "content-human-expression",
         description="在不改变事实、公式和证据的前提下，落实人设语气、情绪与数据事项的 Emoji 功能覆盖和封禁词替换。",
-        version="2.1.0",
+        version="2.4.0",
     ),
     BuiltinSkillSpec(
         slug="viral-structure-rewriter",
@@ -170,7 +170,7 @@ BUILTIN_SKILLS: list[BuiltinSkillSpec] = [
         slug="content-reviewer",
         source_dir=_SKILLS_ROOT / "content-reviewer",
         description="审核公式执行、事实一致性、人设语气和内容风险。",
-        version="1.10.0",
+        version="1.13.0",
         tool_dependencies=(
             "query_kb",
             "open_kb_document",

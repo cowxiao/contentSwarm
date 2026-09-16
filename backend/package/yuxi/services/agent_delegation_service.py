@@ -41,6 +41,7 @@ from yuxi.storage.postgres.models_content import ContentNodeRun
 
 # 节点总时间、单调用时间、默认推理强度；每个受控节点的重试与纠错共用两次调用。
 CONTENT_NODE_EXECUTION_LIMITS = {
+    "semantic_review": (120, 120, "medium"),
     "generate_content": (300, 120, "medium"),
     "select_creation_strategy": (150, 65, "low"),
     "reselect_creation_strategy": (150, 65, "low"),
@@ -130,6 +131,10 @@ def build_runtime_config_snapshot(*, agent: Agent, context, request: AgentDelega
         if request.node_run.node_id == "generate_content":
             snapshot["generation_policy_version"] = 1
             snapshot["model_input_contract"] = "GenerateContentPromptV1"
+        elif request.node_run.node_id == "semantic_review":
+            snapshot["emoji_review_policy_version"] = 1
+            snapshot["persona_review_policy_version"] = 1
+            snapshot["model_input_contract"] = "SemanticReviewInputV1"
         else:
             snapshot["strategy_execution_policy_version"] = 2
             snapshot["model_input_contract"] = "JointStrategyPromptV1"

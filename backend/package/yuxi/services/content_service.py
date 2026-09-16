@@ -401,10 +401,9 @@ def compile_content_brief(
         "visual_material": raw.get("visual_material"),
     }
     missing = []
-    # 简化版表单允许用户用一段自然语言描述全部需求。
-    # 有需求文本时，不再要求旧行业表单中的每个字段逐项填写。
-    if form_values.get("user_request"):
-        return compiled, []
+    # 单输入框提交为空时只提示当前可见字段，不能回到旧行业表单校验。
+    if "user_request" in brief.model_fields_set or "user_request" in form_values:
+        return compiled, [{"field": "user_request", "label": "内容需求"}]
     for field in fields or []:
         if not field.get("required"):
             continue
@@ -648,11 +647,9 @@ async def create_content_task(db: AsyncSession, user: User, payload: ContentTask
     joint = workflow_version.definition_json.get("selection_policy") in {"agent_skill_v1", "blueprint_first_v1"}
     mode = selection_policy["industry_modes"].get(template.slug, selection_policy["default_mode"])
     automatic = workflow_version.definition_json.get("selection_policy") == "blueprint_first_v1"
-    if automatic:
-        content_type_code = None
     if joint and not automatic and mode == "direction_scoped" and not content_type_code:
         raise _content_error(422, "CONTENT_DIRECTION_REQUIRED", "请先选择本次内容方向")
-    if content_types and not automatic and (not joint or mode == "direction_scoped"):
+    if content_types and (not automatic or content_type_code) and (not joint or mode == "direction_scoped"):
         type_map = {item["code"]: item for item in content_types}
         scoped_direction_codes = _scoped_content_type_codes(bundle or {}, template.slug, goal)
         if content_type_code is None:

@@ -30,6 +30,11 @@ from yuxi.content.model.viral_assets import (
 )
 
 
+def text_without_emoji_spacing(text: str) -> str:
+    """表情定点回修比较：保留文字、数字、单位、标点和编号。"""
+    return re.sub(r"[\U0001F000-\U0001FAFF\u2600-\u27BF\u2B05-\u2B07\u200d\ufe0e\ufe0f]|\s", "", text)
+
+
 class StrictContract(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -421,6 +426,9 @@ class GenerateContentInputV1(StrictContract):
 
 
 class SemanticReviewInputV1(StrictContract):
+    review_scope: Literal["emoji", "expression", "full"] = "full"
+    channel_profile: dict[str, Any] = Field(default_factory=dict)
+    persona_profile: dict[str, Any] = Field(default_factory=dict)
     content_brief: dict[str, Any] = Field(min_length=1)
     strategy_snapshot: StrategySnapshotV1 | StrategySnapshotV2
     selected_title: dict[str, Any] = Field(min_length=1)
@@ -876,6 +884,11 @@ def _extract_supported_numbers(value: Any) -> set[str]:
 
 @dataclass(frozen=True, slots=True)
 class ContractDomainContext:
+    require_emoji_review: bool = False
+    require_persona_review: bool = False
+    require_composition_review: bool = False
+    emoji_repair_body: str | None = None
+    persona_repair_middle: tuple[str, ...] = ()
     joint_strategy_input: dict[str, Any] = field(default_factory=dict)
     viral_source: dict[str, Any] = field(default_factory=dict)
     viral_document: dict[str, Any] = field(default_factory=dict)
@@ -976,6 +989,11 @@ class ContractDomainContext:
             if isinstance(requirement, dict) and requirement.get("requirement_id")
         ]
         return cls(
+            require_emoji_review=bool(locks.get("require_emoji_review")),
+            require_persona_review=bool(locks.get("require_persona_review")),
+            require_composition_review=bool(locks.get("require_composition_review")),
+            emoji_repair_body=locks.get("emoji_repair_body"),
+            persona_repair_middle=tuple(locks.get("persona_repair_middle") or ()),
             locked_group_id=match.get("selected_group_id") or formula.get("combination_group_id"),
             title_formula_pool=frozenset(
                 match.get("eligible_title_formula_codes") or formula.get("eligible_title_formula_codes") or []
@@ -1625,6 +1643,23 @@ def validate_content_node_result(
             _validate_evidence_ids(item.evidence_ids, "body", context, f"paragraph_evidence.{index}.evidence_ids")
         _validate_numbers("\n".join([result.body, *result.topics]), context, "body", "body")
     elif isinstance(result, GeneratedContentResultV1):
+        if context.persona_repair_middle:
+            _require_equal(result.title.text, context.locked_title, "title.text")
+            paragraphs = [part.strip() for part in re.split(r"\n\s*\n", result.draft.body) if part.strip()]
+            middle = tuple(text_without_emoji_spacing(part) for part in paragraphs[1:-1])
+            expected = tuple(text_without_emoji_spacing(part) for part in context.persona_repair_middle)
+            if middle != expected:
+                raise ContractDomainValidationError(
+                    "persona_repair_changed_middle", "draft.body",
+                    "首尾人设回修只能改首段和末段；中间各段必须逐字保留、保持顺序和分段，仅允许调整 Emoji 和空格",
+                )
+        if context.emoji_repair_body is not None:
+            _require_equal(result.title.text, context.locked_title, "title.text")
+            if text_without_emoji_spacing(result.draft.body) != text_without_emoji_spacing(context.emoji_repair_body):
+                raise ContractDomainValidationError(
+                    "emoji_repair_changed_text", "draft.body",
+                    "仅表情回修不得改动原文字、数字、单位、标点和顺序，只调整 Emoji 和空格",
+                )
         # 同一错误引用可能出现在多个段落；一次反馈全部位置，避免逐处消耗纠错额度。
         evidence_fields = [("title.evidence_ids", "title", result.title.evidence_ids)]
         evidence_fields.extend(
@@ -1675,6 +1710,29 @@ def validate_content_node_result(
                 )
         _validate_numbers(result.polished_body, context, "polished_body", "body")
     elif isinstance(result, ContentReviewResultV1):
+        if context.require_emoji_review or context.require_persona_review or context.require_composition_review:
+            required = set()
+            if context.require_emoji_review:
+                required.update({"EMOJI_COVERAGE", "EMOJI_APPROPRIATENESS", "EMOJI_RESTRICTIONS"})
+            if context.require_persona_review:
+                required.update({"PERSONA_OPENING", "PERSONA_CLOSING", "PERSONA_GROUNDING"})
+            if context.require_composition_review:
+                required.update({"CREATION_TYPE_ALIGNMENT", "COMPOSITION_ALIGNMENT"})
+            missing = required - {item.code for item in result.checks}
+            if missing:
+                raise ContractDomainValidationError(
+                    "emoji_review_missing", "checks", "必须逐项审核表情与人设并记录结果: " + ", ".join(sorted(missing))
+                )
+            for index, item in enumerate(result.checks):
+                if item.code in required and item.status == "warning":
+                    raise ContractDomainValidationError(
+                        "emoji_review_status", f"checks.{index}.status",
+                        "表达检查必须明确 passed 或 blocked，不以 warning 放行",
+                    )
+                if item.code in required and item.status == "blocked" and (not item.suggestion or not item.location):
+                    raise ContractDomainValidationError(
+                        "emoji_repair_missing", f"checks.{index}", "表达阻断必须指出具体原文位置和定点修正建议"
+                    )
         for index, item in enumerate(result.checks):
             _validate_evidence_ids(item.evidence_ids, "any", context, f"checks.{index}.evidence_ids")
     elif isinstance(result, VisualPlanResultV1):

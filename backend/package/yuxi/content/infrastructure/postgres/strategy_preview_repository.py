@@ -77,7 +77,7 @@ class PostgresStrategyPreviewRepository:
             candidates = build_strategy_candidates(
                 bundle,
                 industry_slug=industry_slug,
-                direction_code=None if auto_direction else task.content_type_code,
+                direction_code=task.content_type_code,
                 auto_direction=auto_direction,
                 rule_version_id=task.rule_version_id,
                 policy=(task.runtime_config_snapshot_json or {}).get("selection_policy_snapshot"),
