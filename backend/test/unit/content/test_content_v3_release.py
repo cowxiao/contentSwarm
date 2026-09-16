@@ -330,6 +330,7 @@ async def test_new_tasks_only_lock_v3_rule_pack_and_workflow(monkeypatch):
                 status="published",
                 version=3,
                 schema_version=3,
+                source_metadata={},
             )
 
         async def create_task(self, **kwargs):

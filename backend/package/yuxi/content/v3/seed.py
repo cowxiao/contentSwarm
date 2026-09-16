@@ -17,6 +17,7 @@ from yuxi.content.catalog import (
 from yuxi.content.model.workflows.definition import workflow_definition_hash
 from yuxi.content.rules import BODY_FORMULAS, INDUSTRIES, METHODS, TITLE_FORMULAS
 from yuxi.content.v3.fixtures import load_decoration_matrix
+from yuxi.content.v3.joint_workflow import PLATFORM_WORKFLOW_PRICE_RECOVERY_ID, WORKFLOW_PRICE_RECOVERY
 from yuxi.content.v3.workflow import PLATFORM_WORKFLOW_V3_ID, WORKFLOW_V3
 from yuxi.storage.postgres.models_content import (
     ContentCombinationRule,
@@ -485,13 +486,24 @@ async def _ensure_all_industry_packs_v3(db: AsyncSession) -> None:
 
 
 async def _activate_v3_seed_data(db: AsyncSession) -> None:
-    """发布系统 V3 配置，并让新任务只从 V3 行业模板进入。"""
+    """发布系统配置，新建模板和旧系统默认入口使用 Blueprint First v2。"""
 
     now = utc_now_naive()
     rules = await db.get(ContentRuleVersion, PLATFORM_RULE_V3_ID)
     workflow = await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_V3_ID)
     if rules is None or workflow is None:
         raise RuntimeError("V3 平台规则或工作流缺失")
+    default_workflow = await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_PRICE_RECOVERY_ID)
+    expected_hash = workflow_definition_hash(WORKFLOW_PRICE_RECOVERY)
+    if (
+        default_workflow is None
+        or default_workflow.status not in {"draft", "published"}
+        or default_workflow.definition_hash != expected_hash
+        or workflow_definition_hash(default_workflow.definition_json) != expected_hash
+    ):
+        raise RuntimeError("Blueprint First v2 缺失、不可发布或定义已变更，停止切换默认入口")
+    default_workflow.status = "published"
+    default_workflow.published_at = default_workflow.published_at or now
     if rules.status == "draft":
         rules.status = "published"
     rules.published_at = rules.published_at or now
@@ -537,7 +549,9 @@ async def _activate_v3_seed_data(db: AsyncSession) -> None:
             },
             "default_knowledge_scope": [],
             "default_workflow_version_id": (
-                template.default_workflow_version_id if template else PLATFORM_WORKFLOW_V3_ID
+                PLATFORM_WORKFLOW_PRICE_RECOVERY_ID
+                if template is None or template.default_workflow_version_id == PLATFORM_WORKFLOW_V3_ID
+                else template.default_workflow_version_id
             ),
             "review_policy": {
                 "require_sources_for_numbers": True,
