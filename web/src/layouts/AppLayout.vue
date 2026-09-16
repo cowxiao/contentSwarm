@@ -19,6 +19,7 @@ import {
   ShieldCheck,
   Layers,
   PanelsTopLeft,
+  ImagePlus,
   Braces,
   ChevronRight,
   ChevronDown
@@ -145,6 +146,14 @@ const mainList = computed(() => {
     activePaths: ['/hycanvas', '/materials'],
     icon: PanelsTopLeft,
     activeIcon: PanelsTopLeft
+  })
+
+  items.push({
+    name: '图片设计',
+    path: '/content/image-design',
+    activePaths: ['/content/image-design'],
+    icon: ImagePlus,
+    activeIcon: ImagePlus
   })
 
   items.push({
