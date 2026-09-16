@@ -57,6 +57,7 @@ class ContentVisualMaterialSelection(BaseModel):
 
 
 class ContentBriefPayload(BaseModel):
+    user_request: str = ""
     brand: dict[str, Any] = Field(default_factory=dict)
     audience: list[str] = Field(default_factory=list)
     business_variables: dict[str, Any] = Field(default_factory=dict)

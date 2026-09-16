@@ -391,27 +391,6 @@ const createHyCanvasDesign = async () => {
   }
 }
 
-const testFormDefaults = {
-  decoration: {
-    brand_name: '杭州栖居空间设计',
-    audience: ['杭州准备改善型装修的三口之家'],
-    pain: ['89㎡空间收纳不足', '厨房动线拥挤', '担心预算失控'],
-    advantage: ['设计施工一体化', '节点验收留档', '主材报价透明'],
-    renovation_scene: '改善型毛坯房硬装',
-    quote_type: '项目硬装预算',
-    project_type: '三室两厅一卫',
-    area: '89㎡',
-    budget: '硬装预算18万元',
-    duration: '预计工期90天',
-    craft_and_materials:
-      '全屋定制柜采用ENF级板材，水电管线分色布置，防水完成后进行48小时闭水试验，各节点验收后留存影像记录。',
-    owner_pain:
-      '入户和餐厅缺少集中收纳，厨房操作台不足，儿童房需要同时满足学习与储物。',
-    project_result:
-      '现场复尺后通过玄关柜、餐边柜和儿童房组合柜增加12㎡收纳空间，厨房动线调整为洗、切、炒顺序。'
-  }
-}
-
 const taskId = computed(() => route.params.taskId)
 const selectedTemplate = computed(() =>
   store.templates.find((item) => item.id === creation.industry_template_id)
@@ -767,13 +746,9 @@ const initializeFormValues = () => {
   const hasSavedValues = Object.values(saved).some(
     (value) => value !== undefined && value !== null && value !== '' && (!Array.isArray(value) || value.length)
   )
-  const defaults = hasSavedValues
-    ? {}
-    : testFormDefaults[store.template?.slug || selectedTemplate.value?.slug] || {}
   activeFields.value.forEach((field) => {
     if (field.type === 'channel') formValues[field.key] = store.task?.channel_profile_version_id || ''
     else if (hasSavedValues && saved[field.key] !== undefined) formValues[field.key] = saved[field.key]
-    else if (defaults[field.key] !== undefined) formValues[field.key] = defaults[field.key]
     else if (field.type === 'tags') formValues[field.key] = []
     else formValues[field.key] = ''
   })
@@ -1627,20 +1602,16 @@ const createTask = async () => {
 }
 
 const buildBrief = () => ({
-  brand: { name: formValues.brand_name || formValues.user_request || '' },
-  audience: Array.isArray(formValues.audience) ? formValues.audience : formValues.audience ? [formValues.audience] : [],
-  business_variables: Object.fromEntries(
-    Object.entries(formValues).filter(
-      ([key]) =>
-        !['brand_name', 'audience', 'persona', 'required_terms', 'forbidden_terms'].includes(key)
-    )
-  ),
-  persona: formValues.persona ? { description: formValues.persona } : {},
-  required_terms: formValues.required_terms || [],
-  forbidden_terms: formValues.forbidden_terms || [],
+  user_request: String(formValues.user_request || '').trim(),
+  brand: {},
+  audience: [],
+  business_variables: {},
+  persona: {},
+  required_terms: [],
+  forbidden_terms: [],
   attachments: [],
   locked_fields: [],
-  form_values: { ...formValues },
+  form_values: { user_request: String(formValues.user_request || '').trim() },
   visual_material: selectedImageItemId.value || selectedHyCanvasTemplateId.value
     ? {
         image_item_id: selectedImageItemId.value || null,

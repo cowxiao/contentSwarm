@@ -62,6 +62,36 @@ def test_compile_brief_accepts_single_user_request_without_legacy_required_field
     assert compiled["business_variables"]["user_request"] == "杭州装修公司，做爆款仿写小红书内容"
 
 
+def test_compile_single_user_request_discards_stale_legacy_form_values():
+    task = SimpleNamespace(id="ct_latest", content_goal="acquire", mode="pro")
+    template = SimpleNamespace(
+        slug="decoration",
+        quick_form_schema=[],
+        pro_form_schema=[
+            {"key": "brand_name", "label": "品牌", "required": True},
+            {"key": "project_type", "label": "项目类型", "required": True},
+        ],
+    )
+    brief = ContentBriefPayload(
+        user_request="最新需求：只生成一篇杭州小户型收纳改造笔记",
+        brand={"name": "旧品牌"},
+        audience=["旧人群"],
+        business_variables={"project_type": "旧项目"},
+        form_values={"user_request": "旧输入", "brand_name": "旧品牌", "project_type": "旧项目"},
+    )
+
+    compiled, missing = compile_content_brief(task=task, template=template, brief=brief)
+
+    assert missing == []
+    assert compiled["user_request"] == "最新需求：只生成一篇杭州小户型收纳改造笔记"
+    assert compiled["form_values"] == {"user_request": "最新需求：只生成一篇杭州小户型收纳改造笔记"}
+    assert compiled["business_variables"] == {
+        "user_request": "最新需求：只生成一篇杭州小户型收纳改造笔记"
+    }
+    assert compiled["brand"] == {}
+    assert compiled["audience"] == []
+
+
 @pytest.mark.parametrize("form_channel", ["", "stale-channel"])
 def test_pro_brief_validates_channel_bound_to_task_instead_of_stale_form(form_channel):
     task = SimpleNamespace(

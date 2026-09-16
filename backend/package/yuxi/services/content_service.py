@@ -323,6 +323,32 @@ def compile_content_brief(
     *, task: ContentTask, template: Any, brief: ContentBriefPayload
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     raw = brief.model_dump()
+    user_request = str(raw.get("user_request") or (raw.get("form_values") or {}).get("user_request") or "").strip()
+    if user_request:
+        compiled = {
+            "task_id": task.id,
+            "industry": template.slug,
+            "content_goal": task.content_goal,
+            "content_type_code": getattr(task, "content_type_code", None),
+            "industry_pack_version_id": getattr(task, "industry_pack_version_id", None),
+            "channel_profile_version_id": getattr(task, "channel_profile_version_id", None),
+            "persona_profile_version_id": getattr(task, "persona_profile_version_id", None),
+            "mode": task.mode,
+            "brand": {},
+            "audience": [],
+            "business_variables": {"user_request": user_request},
+            "persona": {},
+            "required_terms": [],
+            "forbidden_terms": [],
+            "attachments": [],
+            "locked_fields": [],
+            "user_request": user_request,
+            "form_values": {"user_request": user_request},
+            "material_confirmations": [],
+            "visual_material": raw.get("visual_material"),
+        }
+        return compiled, []
+
     form_values = dict(raw.get("form_values") or {})
     business_variables = dict(raw.get("business_variables") or {})
     # knowledge_scope 仅用于忽略旧任务表单遗留值；知识库范围由 Agent 管理配置决定。
@@ -369,6 +395,7 @@ def compile_content_brief(
         "forbidden_terms": raw.get("forbidden_terms") or form_values.get("forbidden_terms") or [],
         "attachments": raw.get("attachments") or [],
         "locked_fields": raw.get("locked_fields") or [],
+        "user_request": "",
         "form_values": form_values,
         "material_confirmations": raw.get("material_confirmations") or [],
         "visual_material": raw.get("visual_material"),
