@@ -157,6 +157,10 @@ const posterTemplatesRefreshing = ref(false)
 const hycanvasTemplates = ref([])
 const hycanvasTemplateUrls = ref({})
 const hycanvasTemplatesLoading = ref(false)
+let hycanvasPreviewObserver = null
+const hycanvasPreviewQueue = []
+const hycanvasPreviewQueued = new Set()
+let hycanvasPreviewRunning = false
 const selectedHyCanvasTemplateId = ref('')
 const hycanvasFields = reactive({})
 const hycanvasCreating = ref(false)
@@ -314,6 +318,32 @@ const selectHyCanvasImage = (event) => {
   hycanvasImageFile.value = event.target.files?.[0] || null
 }
 
+const loadQueuedHyCanvasPreviews = async () => {
+  if (hycanvasPreviewRunning) return
+  hycanvasPreviewRunning = true
+  while (hycanvasPreviewQueue.length) {
+    const { id, generation } = hycanvasPreviewQueue.shift()
+    if (generation !== hycanvasTemplateLoadGeneration) continue
+    try {
+      const file = await contentApi.getHyCanvasTemplatePreview(id)
+      const url = URL.createObjectURL(await file.blob())
+      if (generation === hycanvasTemplateLoadGeneration) {
+        hycanvasTemplateUrls.value = { ...hycanvasTemplateUrls.value, [id]: url }
+      } else URL.revokeObjectURL(url)
+    } catch {
+      // A preview failure leaves the selectable template card available.
+    }
+    if (hycanvasPreviewQueue.length) await new Promise((resolve) => window.setTimeout(resolve, 1200))
+  }
+  hycanvasPreviewRunning = false
+}
+
+const observeHyCanvasPreview = (element, id) => {
+  if (!element || !hycanvasPreviewObserver) return
+  element.dataset.hycanvasTemplateId = id
+  hycanvasPreviewObserver.observe(element)
+}
+
 const loadHyCanvasTemplates = async () => {
   if (hycanvasTemplatesLoading.value || hycanvasTemplates.value.length) return
   const generation = ++hycanvasTemplateLoadGeneration
@@ -321,33 +351,15 @@ const loadHyCanvasTemplates = async () => {
   try {
     const response = await contentApi.listHyCanvasTemplates()
     const templates = response.templates || []
-    const nextUrls = {}
-    await Promise.all(
-      templates.map(async (item) => {
-        const previewUrl = item.preview_urls?.[0] || ''
-        if (!previewUrl.startsWith('/api/content/covers/hycanvas/templates/')) {
-          nextUrls[item.id] = previewUrl
-          return
-        }
-        try {
-          const file = await contentApi.getHyCanvasTemplatePreview(item.id)
-          nextUrls[item.id] = URL.createObjectURL(await file.blob())
-        } catch {
-          nextUrls[item.id] = ''
-        }
-      })
-    )
-    if (generation !== hycanvasTemplateLoadGeneration) {
-      Object.values(nextUrls).forEach((url) => {
-        if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
-      })
-      return
-    }
+    if (generation !== hycanvasTemplateLoadGeneration) return
     Object.values(hycanvasTemplateUrls.value).forEach((url) => {
       if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
     })
     hycanvasTemplates.value = templates
-    hycanvasTemplateUrls.value = nextUrls
+    hycanvasTemplateUrls.value = Object.fromEntries(templates.map((item) => [
+      item.id,
+      item.preview_urls?.[0]?.startsWith('/api/content/covers/hycanvas/templates/') ? '' : item.preview_urls?.[0] || ''
+    ]))
     selectedHyCanvasTemplateId.value =
       store.task?.brief?.visual_material?.hycanvas_template_id ||
       store.artifact?.hycanvas_design_snapshot?.template_id ||
@@ -1480,6 +1492,17 @@ watch(
 )
 
 onMounted(async () => {
+  hycanvasPreviewObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue
+      hycanvasPreviewObserver.unobserve(entry.target)
+      const id = entry.target.dataset.hycanvasTemplateId
+      if (!id || hycanvasPreviewQueued.has(id) || hycanvasTemplateUrls.value[id]) continue
+      hycanvasPreviewQueued.add(id)
+      hycanvasPreviewQueue.push({ id, generation: hycanvasTemplateLoadGeneration })
+      void loadQueuedHyCanvasPreviews()
+    }
+  })
   window.addEventListener('focus', syncPosterTemplatesWhenVisible)
   document.addEventListener('visibilitychange', syncPosterTemplatesWhenVisible)
   posterTemplateSyncTimer = window.setInterval(syncPosterTemplatesWhenVisible, posterTemplateSyncIntervalMs)
@@ -1593,6 +1616,9 @@ const scheduleBriefSave = () => {
 watch(formValues, scheduleBriefSave, { deep: true })
 watch([selectedImageItemId, selectedHyCanvasTemplateId, photoComposition], scheduleBriefSave, { deep: true })
 onBeforeUnmount(() => {
+  hycanvasPreviewObserver?.disconnect()
+  hycanvasPreviewObserver = null
+  hycanvasPreviewQueue.length = 0
   window.clearTimeout(draftSaveTimer)
   window.clearTimeout(compositionPreviewTimer)
   window.clearTimeout(workflowNarrativeTimer)
@@ -2107,6 +2133,7 @@ const openVersions = async () => {
                   <button
                     v-for="item in hycanvasTemplates"
                     :key="item.id"
+                    :ref="(element) => observeHyCanvasPreview(element, item.id)"
                     type="button"
                     class="poster-choice"
                     :class="{ selected: selectedHyCanvasTemplateId === item.id }"
@@ -2547,6 +2574,7 @@ const openVersions = async () => {
                   <button
                     v-for="item in hycanvasTemplates"
                     :key="item.id"
+                    :ref="(element) => observeHyCanvasPreview(element, item.id)"
                     type="button"
                     :class="{ selected: selectedHyCanvasTemplateId === item.id }"
                     @click="selectedHyCanvasTemplateId = item.id"

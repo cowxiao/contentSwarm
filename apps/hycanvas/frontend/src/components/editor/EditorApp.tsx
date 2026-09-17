@@ -300,6 +300,11 @@ export function EditorApp() {
     window.location.assign(integrationReturnUrl);
   }, [integrationReturnUrl]);
   const toast = useToast();
+  useEffect(() => {
+    const showCoverLayoutError = (event: Event) => toast.error((event as CustomEvent<string>).detail);
+    window.addEventListener("hycanvas:cover-layout-error", showCoverLayoutError);
+    return () => window.removeEventListener("hycanvas:cover-layout-error", showCoverLayoutError);
+  }, [toast]);
   const loadDoc = useEditor((s) => s.loadDoc);
   const setDocTitle = useEditor((s) => s.setDocTitle);
   const title = useEditor((s) => s.doc.title);

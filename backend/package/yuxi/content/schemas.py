@@ -50,7 +50,7 @@ class ContentVisualMaterialSelection(BaseModel):
     hycanvas_template_id: str | None = Field(
         default=None,
         pattern=(
-            r"^(?:xiaohongshu-[a-z0-9-]+|"
+            r"^(?:(?:xiaohongshu|system-cover)-[a-z0-9-]+|"
             r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"
         ),
     )

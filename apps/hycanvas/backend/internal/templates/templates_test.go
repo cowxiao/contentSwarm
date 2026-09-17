@@ -46,6 +46,45 @@ func TestSeedLoads(t *testing.T) {
 	}
 }
 
+func TestSystemCoverTemplatesAreSelectableAndFillable(t *testing.T) {
+	count := 0
+	for _, entry := range seedEntries {
+		template := entry.toTemplate()
+		if !strings.HasPrefix(template.ID, "system-cover-") {
+			continue
+		}
+		count++
+		if !contains(template.Tags, "小红书") || asNum(template.Format["width"]) != 1080 || asNum(template.Format["height"]) != 1440 {
+			t.Fatalf("system cover missing zone or format: %s", template.ID)
+		}
+		var file map[string]any
+		if err := json.Unmarshal(entry.File, &file); err != nil {
+			t.Fatal(err)
+		}
+		nodeIDs := map[string]bool{}
+		for _, page := range asArr(file["pages"]) {
+			for _, root := range asArr(asObj(page)["children"]) {
+				visitTree(asObj(root), func(node map[string]any) { nodeIDs[asStr(node["id"])] = true })
+			}
+		}
+		if len(template.FillableFields) == 0 {
+			t.Fatalf("system cover has no fillable fields: %s", template.ID)
+		}
+		fields := map[string]string{"主标题": "装修案例", "副标题": "施工细节"}
+		for _, raw := range template.FillableFields {
+			if !nodeIDs[asStr(asObj(raw)["nodeId"])] {
+				t.Fatalf("field refers to missing node in %s", template.ID)
+			}
+		}
+		if err := fillTextFields(file, template.FillableFields, fields); err != nil {
+			t.Fatalf("system cover cannot fill title and subtitle in %s: %v", template.ID, err)
+		}
+	}
+	if count != 52 {
+		t.Fatalf("want 52 system covers, got %d", count)
+	}
+}
+
 func TestSearchTemplates(t *testing.T) {
 	pool := []Template{
 		{ID: "1", Title: "Birthday Poster", Tags: []string{"party"}, Categories: []string{"poster"}},

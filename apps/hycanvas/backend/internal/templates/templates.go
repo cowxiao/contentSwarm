@@ -25,6 +25,9 @@ import (
 //go:embed seed.json
 var seedJSON []byte
 
+//go:embed system_cover_seed.json
+var systemCoverSeedJSON []byte
+
 // Errors map to RFC 7807 statuses at the HTTP layer.
 var (
 	ErrForbidden  = errors.New("forbidden")
@@ -79,6 +82,9 @@ type seedEntry struct {
 var seedEntries = func() []seedEntry {
 	var out []seedEntry
 	_ = json.Unmarshal(seedJSON, &out)
+	var covers []seedEntry
+	_ = json.Unmarshal(systemCoverSeedJSON, &covers)
+	out = append(out, covers...)
 	return out
 }()
 

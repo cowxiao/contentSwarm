@@ -9,6 +9,17 @@ from yuxi.services.hycanvas_service import HyCanvasClient
 from yuxi.services import hycanvas_service
 
 
+def test_system_cover_template_id_can_create_design():
+    payload = HyCanvasDesignCreate(
+        artifact_id="artifact-1",
+        template_id="system-cover-two-line",
+        title="装修封面",
+        fields={"主标题": "旧房改造", "副标题": "施工细节"},
+    )
+
+    assert payload.template_id == "system-cover-two-line"
+
+
 def test_from_env_requires_complete_configuration(monkeypatch):
     for name in (
         "HYCANVAS_BASE_URL",

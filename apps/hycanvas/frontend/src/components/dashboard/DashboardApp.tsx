@@ -657,6 +657,7 @@ export function DashboardApp({ view }: { view: DashboardView }) {
     }
   }
 
+
   async function confirmTemplateRename() {
     const title = templateRenameValue.trim();
     if (!templateRenameTarget || !title || templateRenaming) return;
@@ -1269,7 +1270,7 @@ export function DashboardApp({ view }: { view: DashboardView }) {
               {templateZone && filteredTemplates.length > 0 && (
                 <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-neutral-400">{tr("dashboard.templates")} ({filteredTemplates.length})</h3>
               )}
-              {filteredTemplates.length === 0 && visibleZoneDesigns.length === 0 ? (
+              {filteredTemplates.length === 0 && visibleZoneDesigns.length === 0 && !templateZone ? (
                 <EmptyState message={tr("dashboard.no_templates_yet_open_a_design_and_use_save")} />
               ) : filteredTemplates.length > 0 ? (
                 <ul className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">

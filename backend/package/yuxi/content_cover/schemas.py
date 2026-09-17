@@ -15,7 +15,7 @@ class HyCanvasDesignCreate(BaseModel):
         min_length=1,
         max_length=128,
         pattern=(
-            r"^(?:xiaohongshu-[a-z0-9-]+|"
+            r"^(?:(?:xiaohongshu|system-cover)-[a-z0-9-]+|"
             r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"
         )
     )
