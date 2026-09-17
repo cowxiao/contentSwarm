@@ -738,10 +738,12 @@ async def create_content_task(db: AsyncSession, user: User, payload: ContentTask
 
 
 async def list_content_tasks(
-    db: AsyncSession, user: User, *, page: int, page_size: int, status: str | None
+    db: AsyncSession, user: User, *, page: int, page_size: int, status: str | None, generated_only: bool = False
 ) -> dict[str, Any]:
     repo = ContentRepository(db)
-    items, total = await repo.list_tasks(user=user, page=page, page_size=page_size, status=status)
+    items, total = await repo.list_tasks(
+        user=user, page=page, page_size=page_size, status=status, generated_only=generated_only
+    )
     return {"items": [item.to_dict() for item in items], "total": total, "page": page, "page_size": page_size}
 
 

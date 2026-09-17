@@ -748,7 +748,7 @@ class ContentRepository:
         return None
 
     async def list_tasks(
-        self, *, user: User, page: int, page_size: int, status: str | None = None
+        self, *, user: User, page: int, page_size: int, status: str | None = None, generated_only: bool = False
     ) -> tuple[list[ContentTask], int]:
         filters = [ContentTask.deleted_at.is_(None)]
         if user.role == "admin":
@@ -757,6 +757,8 @@ class ContentRepository:
             filters.append(ContentTask.created_by == str(user.uid))
         if status:
             filters.append(ContentTask.status == status)
+        if generated_only:
+            filters.append(select(ContentArtifact.id).where(ContentArtifact.task_id == ContentTask.id).exists())
         total = (await self.db.execute(select(func.count(ContentTask.id)).where(*filters))).scalar_one()
         items = (
             await self.db.execute(

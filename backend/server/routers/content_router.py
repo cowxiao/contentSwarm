@@ -307,13 +307,16 @@ async def create_task(
 
 @content.get("/tasks")
 async def list_tasks(
+    generated_only: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     status: str | None = None,
     current_user: User = Depends(get_required_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await list_content_tasks(db, current_user, page=page, page_size=page_size, status=status)
+    return await list_content_tasks(
+        db, current_user, page=page, page_size=page_size, status=status, generated_only=generated_only
+    )
 
 
 @content.post("/tasks/batch-delete")
