@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
 
+from yuxi.content.v3.modular_rules import runtime_policy
+
 from .strategy import (
     CandidateAssessment,
     SelectStrategyInputV2,
@@ -143,7 +145,21 @@ def validate_joint_strategy(payload, inputs: dict[str, Any]) -> JointStrategyDec
         raise ValueError("参考原文版本不一致")
     slots = {slot["name"]: slot for slot in selected["reference_card"]["required_slots"]}
     required = {name for name, slot in slots.items() if slot["required"]}
-    if not required.issubset(reference.slot_mapping) or not set(reference.slot_mapping).issubset(slots):
+    reference_policy = runtime_policy(
+        inputs["runtime_config_snapshot"],
+        "viral-author-core",
+        "reference_policy",
+    )
+    adaptive_structure = reference_policy.get("required_slot_mode") == "mapped_facts_only"
+    if not set(reference.slot_mapping).issubset(slots):
+        raise ValueError("必要事实槽位未完整映射或提交了不存在的槽位")
+    if adaptive_structure:
+        minimum_mapped_slots = reference_policy.get("minimum_mapped_slots")
+        if not isinstance(minimum_mapped_slots, int) or minimum_mapped_slots < 1:
+            raise ValueError("参考映射规则缺少有效的 minimum_mapped_slots")
+        if len(reference.slot_mapping) < minimum_mapped_slots:
+            raise ValueError(f"当前事实至少需要承接 {minimum_mapped_slots} 个参考结构槽位")
+    elif not required.issubset(reference.slot_mapping):
         raise ValueError("必要事实槽位未完整映射或提交了不存在的槽位")
     for paths in reference.slot_mapping.values():
         if not paths:

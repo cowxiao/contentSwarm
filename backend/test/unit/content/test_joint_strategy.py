@@ -57,6 +57,24 @@ def test_joint_decision_selects_highest_scored_card_without_blueprint():
     assert "reference_blueprint" not in validated.model_dump()["reference"]
 
 
+def test_modular_workflow_can_omit_reference_only_fact_blocks():
+    inputs, result = joint_example()
+    inputs["runtime_config_snapshot"]["content_rule_bundle"] = {
+        "runtime_rules": {
+            "viral-author-core": {
+                "reference_policy": {"required_slot_mode": "mapped_facts_only", "minimum_mapped_slots": 1}
+            }
+        }
+    }
+    for candidate in inputs["reference_candidates"]:
+        candidate["reference_card"]["required_slots"].append({"name": "参考原文专属信息块", "required": True})
+
+    validated = validate_joint_strategy(result, inputs)
+
+    assert validated.reference.status == "selected"
+    assert validated.reference.slot_mapping == {"pain": ["content_brief.form_values.pain"]}
+
+
 @pytest.mark.parametrize("section", ["strategy", "reference"])
 def test_missing_material_is_a_rejection_reason_not_an_evidence_path(section):
     inputs, result = joint_example()

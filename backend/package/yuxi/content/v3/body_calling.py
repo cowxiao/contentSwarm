@@ -191,9 +191,7 @@ DECORATION_BODY_CALLING: dict[str, dict[str, Any]] = {
         ],
         "variants": [],
         "variation_rule": "悬念、误区和忠告表达应轮换，避免多篇正文话术重复",
-        "reference_examples": [
-            "以内行细节制造悬念，指出新手误区，给出有依据的标准做法，最后用真诚匠人忠告收尾。"
-        ],
+        "reference_examples": ["以内行细节制造悬念，指出新手误区，给出有依据的标准做法，最后用真诚匠人忠告收尾。"],
     },
     "C04": {
         "formula_name": "人设沉淀类：人设+行业痛点+优势+承诺",
@@ -280,7 +278,7 @@ DECORATION_BODY_CALLING.update(
         "FRB05": _foreman_calling(
             "工长自荐型",
             ["真实工长身份", "相关人设优势", "真实案例或做事证据", "结果或服务边界", "具体行动引导"],
-            ["persona.stance", "persona.core_advantage", "persona.delivery_endorsement", "ending.case_cta"],
+            ["persona.core_advantage"],
             variation_rule="人设只改变表达；每篇只使用二至三项与当前顾虑相关且可核验的优势。",
         ),
         "FRB06": _foreman_calling(

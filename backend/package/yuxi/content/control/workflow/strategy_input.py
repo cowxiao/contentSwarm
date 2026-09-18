@@ -3,6 +3,7 @@
 from copy import deepcopy
 
 from yuxi.content.model.contracts.content_nodes import JointStrategyPromptV1
+from yuxi.content.v3.modular_rules import runtime_policy
 
 
 async def load_strategy_profiles(repo, locked_versions: dict) -> tuple[dict, dict]:
@@ -42,8 +43,14 @@ async def load_strategy_profiles(repo, locked_versions: dict) -> tuple[dict, dic
 def project_strategy_input(payload: dict, *, channel_profile: dict, persona_profile: dict) -> dict:
     # 完整输入先由 JointStrategyInputV1/ReevaluateJointStrategyInputV1 校验并保留。
     view = deepcopy(payload)
-    mode = view["runtime_config_snapshot"].get("creation_mode", "original")
-    view["runtime_config_snapshot"] = {"creation_mode": mode}
+    if view["runtime_config_snapshot"].get("creation_mode") != "viral_rewrite":
+        raise ValueError("内容策略只支持爆款仿写")
+    runtime_snapshot = view["runtime_config_snapshot"]
+    view["runtime_config_snapshot"] = {
+        "creation_mode": "viral_rewrite",
+        "reference_policy": runtime_policy(runtime_snapshot, "viral-author-core", "reference_policy"),
+        "price_policy": runtime_policy(runtime_snapshot, "viral-price-author", "price_policy"),
+    }
     view["channel_profile"] = deepcopy(channel_profile)
     view["persona_profile"] = deepcopy(persona_profile)
     brief = view["content_brief"]
@@ -98,30 +105,34 @@ def project_strategy_input(payload: dict, *, channel_profile: dict, persona_prof
     candidates["available_input_paths"] = paths
     candidates.pop("reference_candidate_limit", None)
     candidates.pop("selection_skill", None)
+    options = candidates.get("direction_options") or []
+    if (
+        candidates.get("auto_direction")
+        and len(options) == 1
+        and candidates.get("direction_blueprint") == options[0].get("direction_blueprint")
+    ):
+        # 自动方向的唯一候选已经携带完整蓝图，避免在同一提示中重复发送。
+        candidates.pop("direction_blueprint", None)
     if candidates.get("industry_slug") == "decoration":
         for section in ("title_formulas", "content_formulas"):
             for item in candidates[section]:
                 source = item.get("source_content")
                 if isinstance(source, dict):
                     source.pop("cross_industry", None)
-    if mode == "original":
-        view.pop("reference_candidates", None)
-        candidates["scoring"].pop("reference", None)
-    else:
-        view["reference_candidates"] = [
-            {
-                key: value
-                for key, value in item.items()
-                if key
-                in {
-                    "id",
-                    "title",
-                    "industry_slug",
-                    "source_hash",
-                    "reference_card",
-                    "structure_preview",
-                }
+    view["reference_candidates"] = [
+        {
+            key: value
+            for key, value in item.items()
+            if key
+            in {
+                "id",
+                "title",
+                "industry_slug",
+                "source_hash",
+                "reference_card",
+                "structure_preview",
             }
-            for item in view["reference_candidates"]
-        ]
+        }
+        for item in view["reference_candidates"]
+    ]
     return JointStrategyPromptV1.model_validate(view).model_dump(mode="json", exclude_none=True)

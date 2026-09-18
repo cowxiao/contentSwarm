@@ -14,10 +14,7 @@ from yuxi.content.v3.formula_lexicons import TITLE_FORMULA_LEXICON_CODES, get_fo
 def _outline_payload(*, formula_code: str, section_ids: list[str], variant_key: str | None = None) -> dict:
     return {
         "body_formula_code": formula_code,
-        "sections": [
-            {"section_id": section_id, "goal": section_id, "evidence_ids": []}
-            for section_id in section_ids
-        ],
+        "sections": [{"section_id": section_id, "goal": section_id, "evidence_ids": []} for section_id in section_ids],
         "variant_key": variant_key,
     }
 
@@ -106,6 +103,11 @@ def test_formula_lexicon_requirements_cover_all_title_formulas_and_locked_body_f
     foreman = get_formula_lexicon_requirements("FRT07", "FRB06")
     assert foreman["title"]
     assert foreman["body"]
+
+
+def test_foreman_self_intro_does_not_require_unsupported_case_claim_lexicons() -> None:
+    requirements = get_formula_lexicon_requirements("FRT12", "FRB05")
+    assert [item["code"] for item in requirements["body"]] == ["persona.core_advantage"]
 
 
 def test_generated_content_must_report_formula_lexicon_usage() -> None:
