@@ -14,6 +14,7 @@ from yuxi.agents.buildin import agent_manager
 from yuxi.agents.buildin.content_workflow.context import ContentWorkflowContext
 from yuxi.content_cover.schemas import CoverRetryCreate
 from yuxi.content.v3.workflow import LEGACY_PLATFORM_WORKFLOW_V3_IDS
+from yuxi.content.v3.modular_rules import runtime_policy
 from yuxi.repositories.content_cover_repository import ContentCoverRepository
 from yuxi.repositories.content_repository import ContentRepository
 from yuxi.repositories.agent_run_repository import TERMINAL_RUN_STATUSES, AgentRunRepository
@@ -144,6 +145,14 @@ async def process_content_run(ctx, run_id: str):
             error_message="旧版内容任务仅保留历史查询，Worker 只执行 V3 工作流",
         )
         return
+    if (task.runtime_config_snapshot_json or {}).get("creation_mode") != "viral_rewrite":
+        await _set_content_run_status(
+            run_id,
+            status="failed",
+            error_type="content_creation_mode_unsupported",
+            error_message="原创任务已停止运行，仅保留历史查询",
+        )
+        return
     if task.workflow_version_id in LEGACY_PLATFORM_WORKFLOW_V3_IDS:
         await _set_content_run_status(
             run_id,
@@ -215,11 +224,26 @@ async def process_content_run(ctx, run_id: str):
                 "resume_parent_run_id": None,
             }
             retry_from_node = None
+            reference_policy = runtime_policy(
+                state_values.get("runtime_config_snapshot") or task.runtime_config_snapshot_json or {},
+                "viral-author-core",
+                "reference_policy",
+            )
+            reference_status = ((state_values.get("joint_strategy_decision") or {}).get("reference") or {}).get(
+                "status"
+            )
             if (
                 pending_nodes == {"lock_creation_strategy"}
+                and reference_policy.get("required_slot_mode") == "mapped_facts_only"
+                and reference_status in {"needs_input", "no_candidate"}
+            ):
+                # 规则允许按当前事实映射参考结构时，旧的资料缺口决策必须重新选择，
+                # 不能重复锁定原拒绝结果。
+                retry_from_node = "prepare_strategy_candidates"
+            elif (
+                pending_nodes == {"lock_creation_strategy"}
                 and (workflow.definition_json or {}).get("price_recovery")
-                and ((state_values.get("joint_strategy_decision") or {}).get("reference") or {}).get("status")
-                in {"needs_input", "no_candidate"}
+                and reference_status in {"needs_input", "no_candidate"}
                 and (state_values.get("strategy_price_evidence_collection") or {}).get("evidence_items")
             ):
                 # 已补证的失败决策需按当前 Skill 复评；重复锁定同一拒绝结果无法恢复。

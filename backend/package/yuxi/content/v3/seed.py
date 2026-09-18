@@ -17,7 +17,15 @@ from yuxi.content.catalog import (
 from yuxi.content.model.workflows.definition import workflow_definition_hash
 from yuxi.content.rules import BODY_FORMULAS, INDUSTRIES, METHODS, TITLE_FORMULAS
 from yuxi.content.v3.fixtures import load_decoration_matrix
-from yuxi.content.v3.joint_workflow import PLATFORM_WORKFLOW_PRICE_RECOVERY_ID, WORKFLOW_PRICE_RECOVERY
+from yuxi.content.v3.joint_workflow import (
+    PLATFORM_WORKFLOW_EXPRESSION_GUIDANCE_ID,
+    PLATFORM_WORKFLOW_MODULAR_AUTHOR_ID,
+    PLATFORM_WORKFLOW_PRICE_RECOVERY_ID,
+    PLATFORM_WORKFLOW_VIRAL_AUTHOR_ID,
+    WORKFLOW_EXPRESSION_GUIDANCE,
+    WORKFLOW_MODULAR_AUTHOR,
+    WORKFLOW_VIRAL_AUTHOR,
+)
 from yuxi.content.v3.workflow import PLATFORM_WORKFLOW_V3_ID, WORKFLOW_V3
 from yuxi.storage.postgres.models_content import (
     ContentCombinationRule,
@@ -201,37 +209,121 @@ async def ensure_content_v3_seed_data(db: AsyncSession) -> None:
 
 async def _ensure_workflow_v3(db: AsyncSession) -> None:
     from yuxi.content.v3.joint_workflow import (
-        PLATFORM_WORKFLOW_JOINT_ID, WORKFLOW_JOINT,
-        PLATFORM_WORKFLOW_BLUEPRINT_FIRST_ID, WORKFLOW_BLUEPRINT_FIRST,
-        PLATFORM_WORKFLOW_PRICE_RECOVERY_ID, WORKFLOW_PRICE_RECOVERY,
+        PLATFORM_WORKFLOW_JOINT_ID,
+        WORKFLOW_JOINT,
+        PLATFORM_WORKFLOW_BLUEPRINT_FIRST_ID,
+        WORKFLOW_BLUEPRINT_FIRST,
+        PLATFORM_WORKFLOW_PRICE_RECOVERY_ID,
+        WORKFLOW_PRICE_RECOVERY,
+        PLATFORM_WORKFLOW_VIRAL_AUTHOR_ID,
+        WORKFLOW_VIRAL_AUTHOR,
+        PLATFORM_WORKFLOW_MODULAR_AUTHOR_ID,
+        WORKFLOW_MODULAR_AUTHOR,
+        PLATFORM_WORKFLOW_EXPRESSION_GUIDANCE_ID,
+        WORKFLOW_EXPRESSION_GUIDANCE,
     )
 
+    if await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_EXPRESSION_GUIDANCE_ID) is None:
+        db.add(
+            ContentWorkflowVersion(
+                id=PLATFORM_WORKFLOW_EXPRESSION_GUIDANCE_ID,
+                slug="enterprise-content",
+                tenant_id=None,
+                version=21,
+                schema_version=3,
+                status="draft",
+                definition_json=deepcopy(WORKFLOW_EXPRESSION_GUIDANCE),
+                definition_hash=workflow_definition_hash(WORKFLOW_EXPRESSION_GUIDANCE),
+                input_schema={"type": "ContentBrief", "version": 3},
+                output_schema={"type": "ContentArtifact", "version": 3},
+                created_by="system",
+            )
+        )
+
+    if await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_MODULAR_AUTHOR_ID) is None:
+        db.add(
+            ContentWorkflowVersion(
+                id=PLATFORM_WORKFLOW_MODULAR_AUTHOR_ID,
+                slug="enterprise-content",
+                tenant_id=None,
+                version=20,
+                schema_version=3,
+                status="draft",
+                definition_json=deepcopy(WORKFLOW_MODULAR_AUTHOR),
+                definition_hash=workflow_definition_hash(WORKFLOW_MODULAR_AUTHOR),
+                input_schema={"type": "ContentBrief", "version": 3},
+                output_schema={"type": "ContentArtifact", "version": 3},
+                created_by="system",
+            )
+        )
+
+    if await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_VIRAL_AUTHOR_ID) is None:
+        db.add(
+            ContentWorkflowVersion(
+                id=PLATFORM_WORKFLOW_VIRAL_AUTHOR_ID,
+                slug="enterprise-content",
+                tenant_id=None,
+                version=19,
+                schema_version=3,
+                status="draft",
+                definition_json=deepcopy(WORKFLOW_VIRAL_AUTHOR),
+                definition_hash=workflow_definition_hash(WORKFLOW_VIRAL_AUTHOR),
+                input_schema={"type": "ContentBrief", "version": 3},
+                output_schema={"type": "ContentArtifact", "version": 3},
+                created_by="system",
+            )
+        )
+
     if await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_PRICE_RECOVERY_ID) is None:
-        db.add(ContentWorkflowVersion(
-            id=PLATFORM_WORKFLOW_PRICE_RECOVERY_ID, slug="enterprise-content", tenant_id=None, version=18,
-            schema_version=3, status="draft", definition_json=deepcopy(WORKFLOW_PRICE_RECOVERY),
-            definition_hash=workflow_definition_hash(WORKFLOW_PRICE_RECOVERY),
-            input_schema={"type": "ContentBrief", "version": 3},
-            output_schema={"type": "ContentArtifact", "version": 3}, created_by="system",
-        ))
+        db.add(
+            ContentWorkflowVersion(
+                id=PLATFORM_WORKFLOW_PRICE_RECOVERY_ID,
+                slug="enterprise-content",
+                tenant_id=None,
+                version=18,
+                schema_version=3,
+                status="draft",
+                definition_json=deepcopy(WORKFLOW_PRICE_RECOVERY),
+                definition_hash=workflow_definition_hash(WORKFLOW_PRICE_RECOVERY),
+                input_schema={"type": "ContentBrief", "version": 3},
+                output_schema={"type": "ContentArtifact", "version": 3},
+                created_by="system",
+            )
+        )
 
     if await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_BLUEPRINT_FIRST_ID) is None:
-        db.add(ContentWorkflowVersion(
-            id=PLATFORM_WORKFLOW_BLUEPRINT_FIRST_ID, slug="enterprise-content", tenant_id=None, version=17,
-            schema_version=3, status="draft", definition_json=deepcopy(WORKFLOW_BLUEPRINT_FIRST),
-            definition_hash=workflow_definition_hash(WORKFLOW_BLUEPRINT_FIRST),
-            input_schema={"type": "ContentBrief", "version": 3},
-            output_schema={"type": "ContentArtifact", "version": 3}, created_by="system",
-        ))
+        db.add(
+            ContentWorkflowVersion(
+                id=PLATFORM_WORKFLOW_BLUEPRINT_FIRST_ID,
+                slug="enterprise-content",
+                tenant_id=None,
+                version=17,
+                schema_version=3,
+                status="draft",
+                definition_json=deepcopy(WORKFLOW_BLUEPRINT_FIRST),
+                definition_hash=workflow_definition_hash(WORKFLOW_BLUEPRINT_FIRST),
+                input_schema={"type": "ContentBrief", "version": 3},
+                output_schema={"type": "ContentArtifact", "version": 3},
+                created_by="system",
+            )
+        )
 
     if await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_JOINT_ID) is None:
-        db.add(ContentWorkflowVersion(
-            id=PLATFORM_WORKFLOW_JOINT_ID, slug="enterprise-content", tenant_id=None, version=15,
-            schema_version=3, status="draft", definition_json=deepcopy(WORKFLOW_JOINT),
-            definition_hash=workflow_definition_hash(WORKFLOW_JOINT),
-            input_schema={"type": "ContentBrief", "version": 3},
-            output_schema={"type": "ContentArtifact", "version": 3}, created_by="system",
-        ))
+        db.add(
+            ContentWorkflowVersion(
+                id=PLATFORM_WORKFLOW_JOINT_ID,
+                slug="enterprise-content",
+                tenant_id=None,
+                version=15,
+                schema_version=3,
+                status="draft",
+                definition_json=deepcopy(WORKFLOW_JOINT),
+                definition_hash=workflow_definition_hash(WORKFLOW_JOINT),
+                input_schema={"type": "ContentBrief", "version": 3},
+                output_schema={"type": "ContentArtifact", "version": 3},
+                created_by="system",
+            )
+        )
     workflow = await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_V3_ID)
     if workflow is not None:
         previous_hash = workflow.definition_hash
@@ -488,23 +580,51 @@ async def _ensure_all_industry_packs_v3(db: AsyncSession) -> None:
 
 
 async def _activate_v3_seed_data(db: AsyncSession) -> None:
-    """发布系统配置，新建模板和旧系统默认入口使用 Blueprint First v2。"""
+    """发布系统配置，并将系统装修模板切换到模块化 V4 工作流。"""
 
     now = utc_now_naive()
     rules = await db.get(ContentRuleVersion, PLATFORM_RULE_V3_ID)
     workflow = await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_V3_ID)
     if rules is None or workflow is None:
         raise RuntimeError("V3 平台规则或工作流缺失")
-    default_workflow = await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_PRICE_RECOVERY_ID)
-    expected_hash = workflow_definition_hash(WORKFLOW_PRICE_RECOVERY)
+    candidate_workflow = await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_VIRAL_AUTHOR_ID)
+    expected_hash = workflow_definition_hash(WORKFLOW_VIRAL_AUTHOR)
     if (
-        default_workflow is None
-        or default_workflow.status not in {"draft", "published"}
-        or default_workflow.definition_hash != expected_hash
-        or workflow_definition_hash(default_workflow.definition_json) != expected_hash
+        candidate_workflow is None
+        or candidate_workflow.status not in {"draft", "validated", "canary", "published"}
+        or candidate_workflow.definition_hash != expected_hash
+        or workflow_definition_hash(candidate_workflow.definition_json) != expected_hash
     ):
-        raise RuntimeError("Blueprint First v2 缺失、不可发布或定义已变更，停止切换默认入口")
-    default_workflow.status = "published"
+        raise RuntimeError("爆款仿写工作流缺失或定义已变更，停止启动")
+    modular_workflow = await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_MODULAR_AUTHOR_ID)
+    modular_hash = workflow_definition_hash(WORKFLOW_MODULAR_AUTHOR)
+    if (
+        modular_workflow is None
+        or modular_workflow.status not in {"draft", "validated", "canary", "published"}
+        or modular_workflow.definition_hash != modular_hash
+        or workflow_definition_hash(modular_workflow.definition_json) != modular_hash
+    ):
+        raise RuntimeError("模块化爆款仿写工作流缺失或定义已变更，停止启动")
+    if modular_workflow.status != "published":
+        modular_workflow.status = "published"
+    modular_workflow.published_at = modular_workflow.published_at or now
+    expression_workflow = await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_EXPRESSION_GUIDANCE_ID)
+    expression_hash = workflow_definition_hash(WORKFLOW_EXPRESSION_GUIDANCE)
+    if (
+        expression_workflow is None
+        or expression_workflow.status not in {"draft", "validated", "canary", "published"}
+        or expression_workflow.definition_hash != expression_hash
+        or workflow_definition_hash(expression_workflow.definition_json) != expression_hash
+    ):
+        raise RuntimeError("表达资料增强工作流缺失或定义已变更，停止启动")
+    if expression_workflow.status != "published":
+        expression_workflow.status = "published"
+    expression_workflow.published_at = expression_workflow.published_at or now
+    default_workflow = await db.get(ContentWorkflowVersion, PLATFORM_WORKFLOW_PRICE_RECOVERY_ID)
+    if default_workflow is None:
+        raise RuntimeError("现行爆款仿写工作流缺失")
+    if default_workflow.status == "draft":
+        default_workflow.status = "published"
     default_workflow.published_at = default_workflow.published_at or now
     if rules.status == "draft":
         rules.status = "published"
@@ -554,8 +674,16 @@ async def _activate_v3_seed_data(db: AsyncSession) -> None:
             },
             "default_knowledge_scope": [],
             "default_workflow_version_id": (
-                PLATFORM_WORKFLOW_PRICE_RECOVERY_ID
-                if template is None or template.default_workflow_version_id == PLATFORM_WORKFLOW_V3_ID
+                PLATFORM_WORKFLOW_EXPRESSION_GUIDANCE_ID
+                if template is None
+                or template.default_workflow_version_id
+                in {
+                    PLATFORM_WORKFLOW_V3_ID,
+                    PLATFORM_WORKFLOW_PRICE_RECOVERY_ID,
+                    PLATFORM_WORKFLOW_VIRAL_AUTHOR_ID,
+                    PLATFORM_WORKFLOW_MODULAR_AUTHOR_ID,
+                    PLATFORM_WORKFLOW_EXPRESSION_GUIDANCE_ID,
+                }
                 else template.default_workflow_version_id
             ),
             "review_policy": {
@@ -599,7 +727,9 @@ async def _activate_v3_seed_data(db: AsyncSession) -> None:
 
 __all__ = [
     "DECORATION_INDUSTRY_PACK_V3_ID",
+    "PLATFORM_WORKFLOW_EXPRESSION_GUIDANCE_ID",
     "PLATFORM_RULE_V3_ID",
+    "PLATFORM_WORKFLOW_MODULAR_AUTHOR_ID",
     "PLATFORM_WORKFLOW_V3_ID",
     "ensure_content_v3_seed_data",
 ]

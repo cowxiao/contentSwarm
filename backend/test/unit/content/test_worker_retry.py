@@ -79,7 +79,7 @@ async def test_worker_shutdown_marks_content_run_retryable_instead_of_cancelled(
         workflow_version_id="workflow-v3",
         rule_version_id="rules-v3",
         industry_template_version_id="industry-v3",
-        runtime_config_snapshot_json={"schema_version": 3},
+        runtime_config_snapshot_json={"schema_version": 3, "creation_mode": "viral_rewrite"},
         brief_json={},
         evidence_json={"items": []},
         mode="quick",
@@ -164,7 +164,7 @@ async def test_graph_initialization_failure_marks_run_and_task_failed(monkeypatc
         workflow_version_id="workflow-v3",
         rule_version_id="rules-v3",
         industry_template_version_id="industry-v3",
-        runtime_config_snapshot_json={"schema_version": 3},
+        runtime_config_snapshot_json={"schema_version": 3, "creation_mode": "viral_rewrite"},
         status="queued",
         error_json=None,
     )
@@ -221,16 +221,35 @@ async def test_graph_initialization_failure_marks_run_and_task_failed(monkeypatc
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("price_recovery,reference_status,has_prices,requested_node,expected_predecessor", [
-    (False, None, False, "generate_body", None),
-    (True, "needs_input", True, "lock_creation_strategy", "merge_strategy_prices"),
-    (True, "no_candidate", True, None, "merge_strategy_prices"),
-    (False, "needs_input", True, "lock_creation_strategy", None),
-    (True, "selected", True, "lock_creation_strategy", None),
-    (True, "needs_input", False, "lock_creation_strategy", None),
-])
+@pytest.mark.parametrize(
+    "price_recovery,reference_status,has_prices,requested_node,workflow_version_id,reference_slot_mode,expected_predecessor",
+    [
+        (False, None, False, "generate_body", "workflow-v3", None, None),
+        (True, "needs_input", True, "lock_creation_strategy", "workflow-v3", None, "merge_strategy_prices"),
+        (True, "no_candidate", True, None, "workflow-v3", None, "merge_strategy_prices"),
+        (False, "needs_input", True, "lock_creation_strategy", "workflow-v3", None, None),
+        (True, "selected", True, "lock_creation_strategy", "workflow-v3", "mapped_facts_only", None),
+        (True, "needs_input", False, "lock_creation_strategy", "workflow-v3", None, None),
+        (
+            True,
+            "needs_input",
+            False,
+            "lock_creation_strategy",
+            "any-workflow-version",
+            "mapped_facts_only",
+            "prepare_strategy_candidates",
+        ),
+    ],
+)
 async def test_failed_node_retry_continues_from_checkpoint(
-    monkeypatch, price_recovery, reference_status, has_prices, requested_node, expected_predecessor,
+    monkeypatch,
+    price_recovery,
+    reference_status,
+    has_prices,
+    requested_node,
+    workflow_version_id,
+    reference_slot_mode,
+    expected_predecessor,
 ):
     graph = FakeGraph()
     graph.pending_node = requested_node or "lock_creation_strategy"
@@ -238,6 +257,13 @@ async def test_failed_node_retry_continues_from_checkpoint(
         "joint_strategy_decision": {"reference": {"status": reference_status}},
         "strategy_price_evidence_collection": {
             "evidence_items": [{"id": "price", "verified_status": "user_confirmed"}] if has_prices else [],
+        },
+        "runtime_config_snapshot": {
+            "content_rule_bundle": {
+                "runtime_rules": {
+                    "viral-author-core": {"reference_policy": {"required_slot_mode": reference_slot_mode}}
+                }
+            }
         },
     }
     statuses = []
@@ -252,17 +278,22 @@ async def test_failed_node_retry_continues_from_checkpoint(
     )
     task = SimpleNamespace(
         id="task-1",
-        workflow_version_id="workflow-v3",
+        workflow_version_id=workflow_version_id,
         rule_version_id="rules-v3",
         industry_template_version_id="industry-v3",
-        runtime_config_snapshot_json={"schema_version": 3},
+        runtime_config_snapshot_json={"schema_version": 3, "creation_mode": "viral_rewrite"},
         brief_json={},
         strategy_json={},
         evidence_json={"items": []},
     )
-    workflow = SimpleNamespace(definition_json={
-        "schema_version": 3, "nodes": [], "edges": [], "price_recovery": price_recovery,
-    })
+    workflow = SimpleNamespace(
+        definition_json={
+            "schema_version": 3,
+            "nodes": [],
+            "edges": [],
+            "price_recovery": price_recovery,
+        }
+    )
 
     async def load_run(run_id):
         return run, task, workflow, {"version": {"id": "rules-v3"}}
@@ -332,7 +363,7 @@ async def test_retry_at_parallel_join_specifies_completed_predecessor(monkeypatc
         workflow_version_id="workflow-v3",
         rule_version_id="rules-v3",
         industry_template_version_id="industry-v3",
-        runtime_config_snapshot_json={"schema_version": 3},
+        runtime_config_snapshot_json={"schema_version": 3, "creation_mode": "viral_rewrite"},
     )
     workflow = SimpleNamespace(
         definition_json={
@@ -404,7 +435,7 @@ async def test_cover_submission_retry_replans_when_template_text_is_too_long(mon
         workflow_version_id="workflow-v3",
         rule_version_id="rules-v3",
         industry_template_version_id="industry-v3",
-        runtime_config_snapshot_json={"schema_version": 3},
+        runtime_config_snapshot_json={"schema_version": 3, "creation_mode": "viral_rewrite"},
     )
     workflow = SimpleNamespace(definition_json={"schema_version": 3, "nodes": [], "edges": []})
 
@@ -462,7 +493,7 @@ async def test_failed_cover_wait_retry_requeues_cover_and_updates_checkpoint(mon
         workflow_version_id="workflow-v3",
         rule_version_id="rules-v3",
         industry_template_version_id="industry-v3",
-        runtime_config_snapshot_json={"schema_version": 3},
+        runtime_config_snapshot_json={"schema_version": 3, "creation_mode": "viral_rewrite"},
     )
     workflow = SimpleNamespace(definition_json={"schema_version": 3, "nodes": [], "edges": []})
 
@@ -534,7 +565,7 @@ async def test_missing_cover_wait_retry_rewinds_to_cover_submission(monkeypatch)
         workflow_version_id="workflow-v3",
         rule_version_id="rules-v3",
         industry_template_version_id="industry-v3",
-        runtime_config_snapshot_json={"schema_version": 3},
+        runtime_config_snapshot_json={"schema_version": 3, "creation_mode": "viral_rewrite"},
     )
     workflow = SimpleNamespace(definition_json={"schema_version": 3, "nodes": [], "edges": []})
 
@@ -595,7 +626,7 @@ async def test_retryable_model_validation_error_is_wrapped_for_arq_retry(monkeyp
         workflow_version_id="workflow-v3",
         rule_version_id="rules-v3",
         industry_template_version_id="industry-v3",
-        runtime_config_snapshot_json={"schema_version": 3},
+        runtime_config_snapshot_json={"schema_version": 3, "creation_mode": "viral_rewrite"},
         brief_json={"task_id": "task-model-retry"},
         strategy_json={"compatibility": "compatible"},
         evidence_json={"items": []},

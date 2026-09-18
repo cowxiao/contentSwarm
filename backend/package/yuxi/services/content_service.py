@@ -77,6 +77,12 @@ def _require_v3_task(task: ContentTask | None) -> None:
             "该任务由旧版内容工作流创建，仅保留历史查询；请新建 V3 任务继续生产",
             schema_version=schema_version,
         )
+    if (task.runtime_config_snapshot_json or {}).get("creation_mode") != "viral_rewrite":
+        raise _content_error(
+            409,
+            "CONTENT_CREATION_MODE_UNSUPPORTED",
+            "原创任务已停止运行和编辑，仅保留历史查询",
+        )
 
 
 def _require_runnable_v3_task(task: ContentTask | None) -> None:
@@ -626,6 +632,20 @@ async def create_content_task(db: AsyncSession, user: User, payload: ContentTask
     schema_version = int((workflow_version.definition_json or {}).get("schema_version") or 1)
     if schema_version != 3:
         raise _content_error(409, "CONTENT_WORKFLOW_V3_REQUIRED", "新任务只能使用 V3 工作流")
+    from yuxi.content.v3.joint_workflow import (
+        PLATFORM_WORKFLOW_EXPRESSION_GUIDANCE_ID,
+        PLATFORM_WORKFLOW_MODULAR_AUTHOR_ID,
+        PLATFORM_WORKFLOW_PRICE_RECOVERY_ID,
+        PLATFORM_WORKFLOW_VIRAL_AUTHOR_ID,
+    )
+
+    if workflow_version.id not in {
+        PLATFORM_WORKFLOW_PRICE_RECOVERY_ID,
+        PLATFORM_WORKFLOW_VIRAL_AUTHOR_ID,
+        PLATFORM_WORKFLOW_MODULAR_AUTHOR_ID,
+        PLATFORM_WORKFLOW_EXPRESSION_GUIDANCE_ID,
+    }:
+        raise _content_error(409, "CONTENT_WORKFLOW_UPGRADE_REQUIRED", "新任务只能使用爆款仿写工作流")
 
     rule_version = await repo.get_published_rule_version(schema_version=schema_version)
     if rule_version is None:
@@ -644,9 +664,16 @@ async def create_content_task(db: AsyncSession, user: User, payload: ContentTask
     content_types = (bundle or {}).get("content_types") or []
     content_type_code = payload.content_type_code
     selection_policy = load_selection_policy()
-    joint = workflow_version.definition_json.get("selection_policy") in {"agent_skill_v1", "blueprint_first_v1"}
+    joint = workflow_version.definition_json.get("selection_policy") in {
+        "agent_skill_v1",
+        "blueprint_first_v1",
+        "modular_viral_author_v1",
+    }
     mode = selection_policy["industry_modes"].get(template.slug, selection_policy["default_mode"])
-    automatic = workflow_version.definition_json.get("selection_policy") == "blueprint_first_v1"
+    automatic = workflow_version.definition_json.get("selection_policy") in {
+        "blueprint_first_v1",
+        "modular_viral_author_v1",
+    }
     if joint and not automatic and mode == "direction_scoped" and not content_type_code:
         raise _content_error(422, "CONTENT_DIRECTION_REQUIRED", "请先选择本次内容方向")
     if content_types and (not automatic or content_type_code) and (not joint or mode == "direction_scoped"):
@@ -660,10 +687,7 @@ async def create_content_task(db: AsyncSession, user: User, payload: ContentTask
         selected_type = type_map.get(content_type_code)
         if selected_type is None:
             raise _content_error(422, "CONTENT_TYPE_INVALID", "内容类型不存在或未发布")
-        if (
-            goal not in (selected_type.get("supported_goals") or [])
-            and content_type_code not in scoped_direction_codes
-        ):
+        if goal not in (selected_type.get("supported_goals") or []) and content_type_code not in scoped_direction_codes:
             raise _content_error(422, "CONTENT_TYPE_GOAL_MISMATCH", "内容类型不支持当前内容目标")
 
     industry_pack = await repo.get_published_industry_pack(template.slug, schema_version=3)
@@ -781,9 +805,9 @@ async def update_content_task(db: AsyncSession, user: User, task_id: str, payloa
         raise _content_error(422, "CONTENT_GOAL_INVALID", "内容目标无效")
     next_goal = changes.get("content_goal", task.content_goal)
     next_type = changes.get("content_type_code", task.content_type_code)
-    direction_scoped = (
-        (task.runtime_config_snapshot_json or {}).get("strategy_mode", "direction_scoped") == "direction_scoped"
-    )
+    direction_scoped = (task.runtime_config_snapshot_json or {}).get(
+        "strategy_mode", "direction_scoped"
+    ) == "direction_scoped"
     if "content_type_code" in changes and direction_scoped:
         definition = await repo.get_content_type(task.rule_version_id, changes["content_type_code"])
         if definition is None:

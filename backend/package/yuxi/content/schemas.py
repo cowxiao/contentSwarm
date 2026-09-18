@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from yuxi.content.model.industry.pack import IndustryPackRegressionMetrics
 
 ContentMode = Literal["quick", "pro"]
-CreationMode = Literal["original", "viral_rewrite"]
+CreationMode = Literal["viral_rewrite"]
 
 
 class ContentTaskCreate(BaseModel):
@@ -16,7 +16,7 @@ class ContentTaskCreate(BaseModel):
 
     industry_template_id: str
     mode: ContentMode = "quick"
-    creation_mode: CreationMode = "original"
+    creation_mode: CreationMode = "viral_rewrite"
     content_goal: str | None = None
     content_type_code: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,80}$")
     persona_profile_version_id: str | None = None
@@ -38,7 +38,6 @@ class ContentTaskBatchDelete(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     task_ids: list[str] = Field(min_length=1, max_length=100)
-
 
 
 class ContentVisualMaterialSelection(BaseModel):
