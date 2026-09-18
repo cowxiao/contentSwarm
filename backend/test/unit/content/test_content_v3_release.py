@@ -89,7 +89,11 @@ async def test_platform_brief_keeps_user_selected_content_type(monkeypatch):
         current_stage="brief",
         selected_image_item_id=None,
         selected_poster_template_id=None,
-        runtime_config_snapshot_json={"schema_version": 3, "content_type_code": "CT03"},
+        runtime_config_snapshot_json={
+            "schema_version": 3,
+            "creation_mode": "viral_rewrite",
+            "content_type_code": "CT03",
+        },
         strategy_json={"stale": True},
         brief_json={},
         to_dict=lambda: {
