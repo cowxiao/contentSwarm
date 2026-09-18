@@ -279,9 +279,7 @@ class AgentDelegationService:
                 node_input.payload,
                 required_visual_intent=request.domain_context.required_visual_intent,
                 required_source_asset_ids=request.domain_context.required_source_asset_ids,
-                allowed_visual_evidence_ids=request.domain_context.allowed_evidence_by_usage.get(
-                    "visual", frozenset()
-                ),
+                allowed_visual_evidence_ids=request.domain_context.allowed_evidence_by_usage.get("visual", frozenset()),
             )
         elif request.node_run.node_id in {"select_creation_strategy", "reselect_creation_strategy"}:
             channel, persona = await load_strategy_profiles(
