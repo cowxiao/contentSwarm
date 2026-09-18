@@ -1180,7 +1180,7 @@ def test_parallel_research_agents_receive_only_their_knowledge_scope(node_id, ex
 
 
 def test_formal_content_agent_catalog_and_conflict_policy():
-    assert len(CONTENT_AGENT_SPECS) == 14
+    assert len(CONTENT_AGENT_SPECS) == 16
     assert {item.slug for item in CONTENT_AGENT_SPECS} == {
         "content-strategy-agent",
         "content-research-agent",
@@ -1195,8 +1195,12 @@ def test_formal_content_agent_catalog_and_conflict_policy():
         "content-body-agent",
         "content-generation-agent",
         "content-review-agent",
+        "content-viral-generation-agent",
+        "content-viral-review-agent",
         "content-visual-agent",
     }
+    assert all(item.name.endswith("智能体") for item in CONTENT_AGENT_SPECS)
+    assert all("Agent" not in item.name for item in CONTENT_AGENT_SPECS)
     title_spec = next(item for item in CONTENT_AGENT_SPECS if item.slug == "content-title-agent")
     assert title_spec.skill_tools == ()
     assert title_spec.config_version == 4
@@ -1249,6 +1253,22 @@ def test_formal_content_agent_catalog_and_conflict_policy():
     )
     assert generation_spec.config_version == 6
     assert generation_spec.reasoning_effort == "medium"
+    viral_generation = next(item for item in CONTENT_AGENT_SPECS if item.slug == "content-viral-generation-agent")
+    viral_review = next(item for item in CONTENT_AGENT_SPECS if item.slug == "content-viral-review-agent")
+    assert viral_generation.skills == (
+        "viral-content-author",
+        "viral-author-core",
+        "viral-title-author",
+        "viral-body-author",
+        "viral-persona-author",
+        "viral-natural-expression",
+        "viral-layout-expression",
+        "viral-platform-expression",
+        "viral-price-author",
+        "viral-topic-author",
+    )
+    assert viral_review.skills == ("viral-content-reviewer", "viral-modular-reviewer")
+    assert viral_generation.skill_tools == viral_review.skill_tools == ()
     spec = CONTENT_AGENT_SPECS[0]
     existing = Agent(
         slug=spec.slug,
@@ -1290,12 +1310,54 @@ def test_system_content_agent_migration_is_versioned_and_preserves_extra_context
     validate_existing_content_agent(existing, spec)
 
 
+def test_system_content_agent_syncs_chinese_display_metadata_without_config_migration():
+    spec = next(item for item in CONTENT_AGENT_SPECS if item.slug == "content-title-agent")
+    existing = Agent(
+        slug=spec.slug,
+        backend_id="ChatbotAgent",
+        name="Title Agent",
+        description="old description",
+        config_json={"context": {"skills": list(spec.skills), "skill_tool_allowlist": []}},
+        enabled=True,
+        config_version=spec.config_version,
+        is_subagent=False,
+        created_by="system",
+        updated_by="system",
+    )
+
+    assert migrate_system_content_agent(existing, spec) is True
+    assert existing.name == "标题创作智能体"
+    assert existing.description == spec.description
+    assert existing.config_version == spec.config_version
+
+
+def test_system_content_agent_replaces_legacy_name_and_preserves_user_configuration():
+    spec = next(item for item in CONTENT_AGENT_SPECS if item.slug == "content-research-agent")
+    existing = Agent(
+        slug=spec.slug,
+        backend_id="ChatbotAgent",
+        name="内容调研 Agent",
+        description="用户保留的描述",
+        config_json={"context": {"skills": list(spec.skills), "skill_tool_allowlist": list(spec.skill_tools)}},
+        enabled=True,
+        config_version=spec.config_version,
+        is_subagent=False,
+        created_by="system",
+        updated_by="user-1",
+    )
+
+    assert migrate_system_content_agent(existing, spec) is True
+    assert existing.name == "内容调研智能体"
+    assert existing.description == "用户保留的描述"
+    assert existing.updated_by == "user-1"
+
+
 def test_system_content_agent_migration_does_not_overwrite_user_changes():
     spec = next(item for item in CONTENT_AGENT_SPECS if item.slug == "content-visual-agent")
     existing = Agent(
         slug=spec.slug,
         backend_id="ChatbotAgent",
-        name=spec.name,
+        name="用户自定义视觉智能体",
         config_json={"context": {"skills": list(spec.skills), "skill_tool_allowlist": []}},
         enabled=True,
         config_version=1,
@@ -1305,6 +1367,7 @@ def test_system_content_agent_migration_does_not_overwrite_user_changes():
     )
 
     assert migrate_system_content_agent(existing, spec) is False
+    assert existing.name == "用户自定义视觉智能体"
     assert existing.config_version == 1
     assert existing.updated_by == "user-1"
 
@@ -1492,6 +1555,7 @@ def test_runtime_snapshot_hash_changes_with_skill_hash():
         knowledges=[],
     )
     first = build_runtime_config_snapshot(agent=agent, context=context, request=request)
+    assert first["model_input_contract"] == request.input_contract
     context._runtime_skill_snapshots[0]["content_hash"] = "h2"
     second = build_runtime_config_snapshot(agent=agent, context=context, request=request)
     assert first["snapshot_hash"] != second["snapshot_hash"]
