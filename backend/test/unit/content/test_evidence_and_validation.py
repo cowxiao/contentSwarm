@@ -1,6 +1,12 @@
 import json
 
-from yuxi.content.validators import merge_evidence, normalize_manual_evidence, validate_content
+from yuxi.content.validators import (
+    evidence_number_tokens,
+    merge_evidence,
+    normalize_manual_evidence,
+    unsupported_number_tokens,
+    validate_content,
+)
 
 
 def test_normalize_evidence_is_stable_and_source_backed():
@@ -105,3 +111,39 @@ def test_deterministic_review_does_not_use_asset_id_as_work_years_evidence():
 
     assert report["status"] == "blocked"
     assert any(item["message"] == "数字“5年”没有出现在证据包中" for item in report["checks"])
+
+
+def test_price_unit_spacing_in_evidence_does_not_block_same_amount():
+    evidence = {
+        "items": [
+            {
+                "id": "ev-price",
+                "value": "铲墙：20 元 /㎡ ×28㎡ =560 元；石膏板吊顶：70 元 /㎡ ×4㎡ =280 元",
+            }
+        ]
+    }
+
+    assert unsupported_number_tokens("铲墙20元/㎡×28㎡=560元，吊顶70元/㎡×4㎡=280元", evidence) == []
+    assert unsupported_number_tokens("铲墙20元/㎡×28㎡=560元，额外收费999元", evidence) == ["999元"]
+
+
+def test_unsupported_number_tokens_ignore_keycap_emoji_only():
+    assert unsupported_number_tokens("1️⃣ 看范围，2⃣ 核材料，另收99元", {"items": []}) == ["99元"]
+
+
+def test_persona_numeric_fields_supply_only_their_declared_units():
+    evidence = {
+        "items": [
+            {
+                "value": '"persona": {"workYears": "5", "servedSiteCount": "10", "ownerRecommendCount": "10"}',
+                "source_type": "manual_input",
+                "allowed_usage": ["body"],
+            }
+        ]
+    }
+
+    assert {"5年", "10个", "10位"} <= set(evidence_number_tokens(evidence))
+    assert unsupported_number_tokens("做工长5年，服务10个工地，获10位业主推荐", evidence) == []
+    assert unsupported_number_tokens("5万元报价，10天完工", evidence) == ["10天", "5万元"]
+    evidence["items"][0]["source_type"] = "knowledge_base"
+    assert unsupported_number_tokens("做工长5年", evidence) == ["5年"]

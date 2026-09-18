@@ -7,9 +7,16 @@ from typing import Any
 
 from yuxi.content.rules import brief_variable_map
 
-NUMBER_PATTERN = re.compile(r"\d+(?:\.\d+)?(?:%|元|万元|天|周|月|年|个|次|㎡|人)?")
+NUMBER_PATTERN = re.compile(r"\d+(?:\.\d+)?(?:%|元|万元|天|周|月|年|岁|个|位|次|㎡|人)?")
 HIGH_RISK_CLAIMS = ("保证", "百分百", "100%", "一定有效", "绝对", "零风险", "最便宜", "第一")
-STRUCTURED_NUMBER_UNITS = {"workYears": "年", "work_years": "年"}
+NUMBER_UNIT_SPACING = re.compile(r"(?<=\d)\s+(?=万元|元|天|周|月|年|岁|个|位|次|㎡|人|%)")
+PERSONA_NUMBER_UNITS = {
+    "age": "岁",
+    "workYears": "年",
+    "work_years": "年",
+    "servedSiteCount": "个",
+    "ownerRecommendCount": "位",
+}
 
 
 def _evidence_id(task_id: str, key: str, value: Any) -> str:
@@ -68,7 +75,7 @@ def _structured_number_aliases(value: Any) -> set[str]:
     aliases: set[str] = set()
     if isinstance(value, dict):
         for key, nested in value.items():
-            unit = STRUCTURED_NUMBER_UNITS.get(key)
+            unit = PERSONA_NUMBER_UNITS.get(key)
             scalar = str(nested).strip()
             if unit and re.fullmatch(r"\d+(?:\.\d+)?", scalar):
                 aliases.add(f"{scalar}{unit}")
@@ -80,20 +87,33 @@ def _structured_number_aliases(value: Any) -> set[str]:
 
 
 def evidence_number_tokens(evidence_bundle: dict[str, Any]) -> list[str]:
-    values = [item.get("value") for item in evidence_bundle.get("items") or [] if item.get("value") is not None]
-    evidence_text = " ".join(json.dumps(value, ensure_ascii=False) for value in values)
-    tokens = set(NUMBER_PATTERN.findall(evidence_text))
-    for value in values:
+    evidence_values = [
+        item.get("value") for item in evidence_bundle.get("items") or [] if item.get("value") is not None
+    ]
+    evidence_text = " ".join(json.dumps(value, ensure_ascii=False) for value in evidence_values)
+    tokens = set(NUMBER_PATTERN.findall(NUMBER_UNIT_SPACING.sub("", evidence_text)))
+    for item in evidence_bundle.get("items") or []:
+        if item.get("source_type") not in {None, "manual_input"}:
+            continue
+        value = item.get("value")
+        if value is None:
+            continue
         tokens.update(_structured_number_aliases(value))
+        raw = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+        for field, unit in PERSONA_NUMBER_UNITS.items():
+            for number in re.findall(rf'"{field}"\s*:\s*"?(\d+(?:\.\d+)?)"?', raw):
+                tokens.add(f"{number}{unit}")
     return sorted(tokens)
 
 
 def unsupported_number_tokens(content: str, evidence_bundle: dict[str, Any]) -> list[str]:
     values = [item.get("value") for item in evidence_bundle.get("items") or [] if item.get("value") is not None]
     evidence_text = " ".join(json.dumps(value, ensure_ascii=False) for value in values)
-    aliases = set().union(*(_structured_number_aliases(value) for value in values)) if values else set()
+    evidence_text = NUMBER_UNIT_SPACING.sub("", evidence_text)
+    content = re.sub(r"[0-9]\ufe0f?\u20e3", "", content)
+    allowed = set(evidence_number_tokens(evidence_bundle))
     return sorted(
-        {number for number in NUMBER_PATTERN.findall(content) if number not in evidence_text and number not in aliases}
+        {number for number in NUMBER_PATTERN.findall(content) if number not in evidence_text and number not in allowed}
     )
 
 
@@ -187,3 +207,190 @@ def validate_content(
 
     status = "blocked" if any(item["level"] == "error" for item in checks) else "warning" if checks else "passed"
     return {"status": status, "checks": checks}
+
+
+def validate_modular_content(
+    *,
+    title: str,
+    body: str,
+    topics: list[str],
+    draft: dict[str, Any],
+    brief: dict[str, Any],
+    evidence_bundle: dict[str, Any],
+    rule_bundle: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """执行 v4 可确定判断的运营规则；自然程度继续交给审核 Agent。"""
+
+    checks: list[dict[str, Any]] = []
+    rules = rule_bundle.get("runtime_rules") or {}
+    topic_rules = rules.get("viral-topic-author") or {}
+    required_topic_count = int(topic_rules.get("topic_count") or 10)
+    normalized_topics = [str(topic).strip().lstrip("#").strip() for topic in topics]
+    if len(topics) != required_topic_count:
+        checks.append(
+            {
+                "code": "TOPIC_COUNT_MISMATCH",
+                "level": "error",
+                "location": "topics",
+                "message": f"话题必须恰好 {required_topic_count} 个，当前为 {len(topics)} 个",
+                "evidence_ids": [],
+            }
+        )
+    if len(normalized_topics) != len(set(normalized_topics)):
+        checks.append(
+            {
+                "code": "TOPIC_DUPLICATED",
+                "level": "error",
+                "location": "topics",
+                "message": "话题存在重复项",
+                "evidence_ids": [],
+            }
+        )
+    allowed_topics = {str(item).strip().lstrip("#").strip() for item in rule_bundle.get("topic_candidates") or []}
+    outside_pool = sorted({item for item in normalized_topics if item and item not in allowed_topics})
+    if topic_rules.get("must_use_candidate_pool") and outside_pool:
+        checks.append(
+            {
+                "code": "TOPIC_OUTSIDE_CANDIDATE_POOL",
+                "level": "error",
+                "location": "topics",
+                "message": "话题不在本次冻结候选池中: " + "、".join(outside_pool),
+                "evidence_ids": [],
+            }
+        )
+
+    platform_rules = rules.get("viral-platform-expression") or {}
+    combined = f"{title}\n{body}"
+    residual_terms = [term for term in (platform_rules.get("forbidden_replacements") or {}) if term in combined]
+    if residual_terms:
+        checks.append(
+            {
+                "code": "CONTENT_FORBIDDEN_TERM",
+                "level": "error",
+                "location": "content",
+                "message": "问题词替换后仍有残留: " + "、".join(residual_terms),
+                "evidence_ids": [],
+            }
+        )
+    direct_cta_patterns = list(platform_rules.get("direct_cta_patterns") or [])
+    direct_cta_patterns.extend((r"把.{0,8}(?:户型|项目).{0,4}发", r"(?:评论|私信|留言).{0,10}(?:户型|项目|告诉|联系)"))
+    matched_cta = [pattern for pattern in direct_cta_patterns if re.search(pattern, body)]
+    if matched_cta:
+        checks.append(
+            {
+                "code": "CTA_TOO_DIRECT",
+                "level": "error",
+                "location": "body",
+                "message": "结尾或正文包含强引导评论、私信或发送资料的表达",
+                "evidence_ids": [],
+                "matched_terms": matched_cta,
+            }
+        )
+    matched_risk = [term for term in platform_rules.get("high_risk_claims") or [] if term in combined]
+    if matched_risk:
+        checks.append(
+            {
+                "code": "CONTENT_HIGH_RISK_CLAIM",
+                "level": "error",
+                "location": "content",
+                "message": "包含高风险或绝对化宣传: " + "、".join(matched_risk),
+                "evidence_ids": [],
+            }
+        )
+
+    natural_rules = rules.get("viral-natural-expression") or {}
+    matched_mechanical = [term for term in natural_rules.get("mechanical_markers") or [] if term in body]
+    if matched_mechanical:
+        checks.append(
+            {
+                "code": "MECHANICAL_META_EXPRESSION",
+                "level": "error",
+                "location": "body",
+                "message": "正文包含报告腔或暴露写作步骤的模板表达",
+                "evidence_ids": [],
+                "matched_terms": matched_mechanical,
+            }
+        )
+
+    layout_rules = rules.get("viral-layout-expression") or {}
+    markdown_literals = list(layout_rules.get("forbidden_markdown_patterns") or [])
+    matched_markdown = [pattern for pattern in markdown_literals if pattern in body]
+    markdown_regexes = (r"(?m)^#{1,6}\s", r"(?m)^\s*\|.*\|\s*$")
+    matched_markdown.extend(pattern for pattern in markdown_regexes if re.search(pattern, body))
+    if matched_markdown:
+        checks.append(
+            {
+                "code": "LAYOUT_MARKDOWN_FORBIDDEN",
+                "level": "error",
+                "location": "body",
+                "message": "正文包含不可直接发布的 Markdown 标题、表格或代码块",
+                "evidence_ids": [],
+            }
+        )
+    max_paragraph_chars = int(layout_rules.get("max_paragraph_chars") or 160)
+    long_paragraphs = [part for part in re.split(r"\n\s*\n", body) if len(part.strip()) > max_paragraph_chars]
+    if long_paragraphs:
+        checks.append(
+            {
+                "code": "LAYOUT_PARAGRAPH_TOO_LONG",
+                "level": "error",
+                "location": "body",
+                "message": f"存在超过 {max_paragraph_chars} 字的连续长段，需按语义拆分",
+                "evidence_ids": [],
+            }
+        )
+
+    price_rules = rules.get("viral-price-author") or {}
+    used_body_evidence = {
+        evidence_id
+        for paragraph in draft.get("paragraph_evidence") or []
+        for evidence_id in paragraph.get("evidence_ids") or []
+    }
+    variables = brief_variable_map(brief)
+    expected_city = next(
+        (str(variables[key]).strip() for key in ("city", "location", "region", "serviceCity") if variables.get(key)),
+        "",
+    )
+    if not expected_city:
+        brief_text = " ".join(str(value) for value in variables.values() if isinstance(value, str))
+        city_match = re.search(r'["\']serviceCity["\']\s*:\s*["\']([^"\']{2,12})["\']', brief_text)
+        expected_city = city_match.group(1).strip() if city_match else ""
+    expected_city = expected_city.removesuffix("市")
+    for item in evidence_bundle.get("items") or []:
+        metadata = item.get("metadata") or {}
+        if str(item.get("id") or "") not in used_body_evidence or metadata.get("material_type") != "price":
+            continue
+        missing = [key for key in price_rules.get("required_price_metadata") or [] if not metadata.get(key)]
+        if missing:
+            checks.append(
+                {
+                    "code": "PRICE_EVIDENCE_SCOPE_MISMATCH",
+                    "level": "error",
+                    "location": "body",
+                    "message": "已使用的报价证据缺少口径字段: " + "、".join(missing),
+                    "evidence_ids": [str(item["id"])],
+                }
+            )
+        evidence_city = str(metadata.get("city") or metadata.get("region") or "").strip().removesuffix("市")
+        evidence_scope = " ".join((str(item.get("value") or ""), str(metadata))).removesuffix("市")
+        if expected_city and evidence_city and expected_city != evidence_city:
+            checks.append(
+                {
+                    "code": "PRICE_CITY_MISMATCH",
+                    "level": "error",
+                    "location": "body",
+                    "message": f"报价证据城市为 {evidence_city}，与任务城市 {expected_city} 不一致",
+                    "evidence_ids": [str(item["id"])],
+                }
+            )
+        elif expected_city and expected_city not in evidence_scope:
+            checks.append(
+                {
+                    "code": "PRICE_CITY_UNVERIFIED",
+                    "level": "error",
+                    "location": "body",
+                    "message": f"报价证据未注明任务城市 {expected_city}，不能用于本地单价",
+                    "evidence_ids": [str(item["id"])],
+                }
+            )
+    return checks

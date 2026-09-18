@@ -39,7 +39,8 @@ class ContentNodeInputAssembler:
             raw_payload.update(
                 review_scope=(
                     "full"
-                    if (state.get("runtime_config_snapshot") or {}).get("strict_semantic_review")
+                    if node.get("agent_slug") == "content-viral-review-agent"
+                    or (state.get("runtime_config_snapshot") or {}).get("strict_semantic_review")
                     else "expression"
                 ),
                 channel_profile=state.get("channel_profile") or {},
