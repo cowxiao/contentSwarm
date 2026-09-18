@@ -54,6 +54,10 @@ class ContentVisualMaterialSelection(BaseModel):
             r"[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$"
         ),
     )
+    featured_cover_template_id: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    )
 
 
 class ContentBriefPayload(BaseModel):

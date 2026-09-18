@@ -9,6 +9,7 @@ from yuxi.content.rules import brief_variable_map
 
 NUMBER_PATTERN = re.compile(r"\d+(?:\.\d+)?(?:%|元|万元|天|周|月|年|个|次|㎡|人)?")
 HIGH_RISK_CLAIMS = ("保证", "百分百", "100%", "一定有效", "绝对", "零风险", "最便宜", "第一")
+STRUCTURED_NUMBER_UNITS = {"workYears": "年", "work_years": "年"}
 
 
 def _evidence_id(task_id: str, key: str, value: Any) -> str:
@@ -54,22 +55,46 @@ def merge_evidence(base: dict[str, Any], additions: list[dict[str, Any]]) -> dic
     return {"items": items, "summary": summary}
 
 
+def _structured_number_aliases(value: Any) -> set[str]:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped or stripped[0] not in "{[":
+            return set()
+        try:
+            value = json.loads(stripped)
+        except json.JSONDecodeError:
+            return set()
+
+    aliases: set[str] = set()
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            unit = STRUCTURED_NUMBER_UNITS.get(key)
+            scalar = str(nested).strip()
+            if unit and re.fullmatch(r"\d+(?:\.\d+)?", scalar):
+                aliases.add(f"{scalar}{unit}")
+            aliases.update(_structured_number_aliases(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            aliases.update(_structured_number_aliases(nested))
+    return aliases
+
+
 def evidence_number_tokens(evidence_bundle: dict[str, Any]) -> list[str]:
-    evidence_text = " ".join(
-        json.dumps(item.get("value"), ensure_ascii=False)
-        for item in evidence_bundle.get("items") or []
-        if item.get("value") is not None
-    )
-    return sorted(set(NUMBER_PATTERN.findall(evidence_text)))
+    values = [item.get("value") for item in evidence_bundle.get("items") or [] if item.get("value") is not None]
+    evidence_text = " ".join(json.dumps(value, ensure_ascii=False) for value in values)
+    tokens = set(NUMBER_PATTERN.findall(evidence_text))
+    for value in values:
+        tokens.update(_structured_number_aliases(value))
+    return sorted(tokens)
 
 
 def unsupported_number_tokens(content: str, evidence_bundle: dict[str, Any]) -> list[str]:
-    evidence_text = " ".join(
-        json.dumps(item.get("value"), ensure_ascii=False)
-        for item in evidence_bundle.get("items") or []
-        if item.get("value") is not None
+    values = [item.get("value") for item in evidence_bundle.get("items") or [] if item.get("value") is not None]
+    evidence_text = " ".join(json.dumps(value, ensure_ascii=False) for value in values)
+    aliases = set().union(*(_structured_number_aliases(value) for value in values)) if values else set()
+    return sorted(
+        {number for number in NUMBER_PATTERN.findall(content) if number not in evidence_text and number not in aliases}
     )
-    return sorted({number for number in NUMBER_PATTERN.findall(content) if number not in evidence_text})
 
 
 def validate_content(

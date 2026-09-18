@@ -93,7 +93,7 @@ async def process_viral_asset(_ctx, asset_id: str, attempt: int):
             asset.agent_run_id = run_id
             await db.commit()
         graph = await backend.get_graph(context=context)
-        async with asyncio.timeout(140):
+        async with asyncio.timeout(240):
             await graph.ainvoke(
                 {"messages": [json.dumps(payload, ensure_ascii=False)]},
                 context=context,

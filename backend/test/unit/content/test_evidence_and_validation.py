@@ -1,3 +1,5 @@
+import json
+
 from yuxi.content.validators import merge_evidence, normalize_manual_evidence, validate_content
 
 
@@ -59,3 +61,47 @@ def test_deterministic_review_accepts_numbers_in_shared_evidence_bundle():
     )
 
     assert report == {"status": "passed", "checks": []}
+
+
+def test_deterministic_review_accepts_work_years_from_structured_request():
+    report = validate_content(
+        title="长沙装修工长",
+        body="在长沙做了5年装修工长，主要做水电和泥瓦。",
+        topics=[],
+        brief={"required_terms": [], "forbidden_terms": []},
+        evidence_bundle={
+            "items": [
+                {
+                    "id": "ev_request",
+                    "value": json.dumps(
+                        {"persona": {"workYears": "5", "skills": ["水电", "泥瓦"]}},
+                        ensure_ascii=False,
+                    ),
+                }
+            ]
+        },
+        strategy={"methods": ["M01"], "title_formula_code": "T01", "content_formula_code": "C01"},
+    )
+
+    assert report == {"status": "passed", "checks": []}
+
+
+def test_deterministic_review_does_not_use_asset_id_as_work_years_evidence():
+    report = validate_content(
+        title="长沙装修工长",
+        body="在长沙做了5年装修工长。",
+        topics=[],
+        brief={"required_terms": [], "forbidden_terms": []},
+        evidence_bundle={
+            "items": [
+                {
+                    "id": "ev_request",
+                    "value": json.dumps({"images": [{"objectKey": "5.jpg"}]}),
+                }
+            ]
+        },
+        strategy={"methods": ["M01"], "title_formula_code": "T01", "content_formula_code": "C01"},
+    )
+
+    assert report["status"] == "blocked"
+    assert any(item["message"] == "数字“5年”没有出现在证据包中" for item in report["checks"])

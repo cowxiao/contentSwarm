@@ -52,6 +52,7 @@ def project_strategy_input(payload: dict, *, channel_profile: dict, persona_prof
     for key in list(brief):
         if key.endswith("_version_id") or key in {"task_id", "visual_material", "attachments", "mode"}:
             del brief[key]
+    user_request = str(brief.get("user_request") or "").strip()
     bundle = view["evidence_bundle"]
     view["evidence_bundle"] = {key: value for key, value in bundle.items() if key in {"items", "status"}}
     items = bundle.get("items", [])
@@ -59,6 +60,9 @@ def project_strategy_input(payload: dict, *, channel_profile: dict, persona_prof
         values = brief.get(section) or {}
         for key, value in list(values.items()):
             if key.endswith("_version_id") or key in {"visual_material", "attachments"}:
+                del values[key]
+            elif key == "user_request" and user_request and str(value).strip() == user_request:
+                # 单输入框简报会为兼容旧协议保存三份同值；模型视图只保留顶层事实。
                 del values[key]
             elif any(
                 item.get("source_type") == "manual_input"
@@ -82,6 +86,8 @@ def project_strategy_input(payload: dict, *, channel_profile: dict, persona_prof
         ):
             item["input_path"] = f"evidence_bundle.items.{index}.value"
             paths.append(item["input_path"])
+    if user_request:
+        paths.append("content_brief.user_request")
     paths.extend(
         f"content_brief.{section}.{key}"
         for section in ("form_values", "business_variables")

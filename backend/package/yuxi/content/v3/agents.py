@@ -57,9 +57,9 @@ CONTENT_AGENT_SPECS = (
         skills=("viral-asset-preparer", "viral-document-detector"),
         reasoning_effort="low",
         inherit_context_from="content-research-agent",
-        model_call_timeout_seconds=100,
+        model_call_timeout_seconds=180,
         model_retry_times=0,
-        config_version=3,
+        config_version=4,
     ),
     ContentAgentSpec(
         slug="content-joint-strategy-agent",

@@ -649,6 +649,30 @@ func TestTemplates_DB(t *testing.T) {
 		t.Fatalf("applied design should remain in Xiaohongshu zone: %+v err=%v", appliedZone, err)
 	}
 
+	// The featured-cover zone follows the same save/apply loop with its own tag.
+	featuredDesign := map[string]any{
+		"id": uuid.NewString(), "schemaVersion": 24, "title": "精选封面",
+		"unit": "px", "dpi": 96,
+		"pages":  []any{map[string]any{"id": "p-featured", "name": "Page 1", "width": 1080, "height": 1440, "children": []any{}}},
+		"assets": []any{}, "fonts": []any{}, "meta": map[string]any{"templateZone": "featured"},
+	}
+	featuredRec, err := persist.Create(ctx, ws.ID, "精选封面", persistence.DesignFile(featuredDesign), &owner.ID)
+	if err != nil {
+		t.Fatalf("create featured design: %v", err)
+	}
+	featuredSaved, err := svc.SaveAsTemplate(ctx, owner.ID, SaveInput{WorkspaceID: ws.ID, DesignID: featuredRec.ID, Title: "Featured Cover", Visibility: "public"})
+	if err != nil || !contains(featuredSaved.Tags, "精选封面") || len(featuredSaved.Categories) != 1 || featuredSaved.Categories[0] != "精选封面" {
+		t.Fatalf("featured zone tag not inherited: %+v err=%v", featuredSaved, err)
+	}
+	appliedFeaturedID, err := svc.Apply(ctx, owner.ID, featuredSaved.ID, ws.ID)
+	if err != nil {
+		t.Fatalf("apply featured template: %v", err)
+	}
+	appliedFeatured, err := persist.GetRecord(ctx, appliedFeaturedID)
+	if err != nil || appliedFeatured.TemplateZone == nil || *appliedFeatured.TemplateZone != "featured" {
+		t.Fatalf("applied design should remain in featured zone: %+v err=%v", appliedFeatured, err)
+	}
+
 	// Save the design as a private template; it then appears in the list.
 	loaded, _ := persist.LoadFile(ctx, designID, ws.ID)
 	saved, err := svc.SaveAsTemplate(ctx, owner.ID, SaveInput{WorkspaceID: ws.ID, File: loaded.File, Title: "My Template", Visibility: "private"})
@@ -719,6 +743,18 @@ func TestTemplates_DB(t *testing.T) {
 	}
 	if _, err := svc.Get(ctx, owner.ID, saved.ID); err != ErrNotFound {
 		t.Fatalf("deleted template should no longer exist, got %v", err)
+	}
+
+	// Public templates (featured-cover uploads) are retractable by their owner.
+	publicSaved, err := svc.SaveAsTemplate(ctx, owner.ID, SaveInput{WorkspaceID: ws.ID, File: loaded.File, Title: "Public Template", Visibility: "public"})
+	if err != nil {
+		t.Fatalf("SaveAsTemplate public: %v", err)
+	}
+	if err := svc.Delete(ctx, other.ID, publicSaved.ID); err != ErrForbidden {
+		t.Fatalf("non-owner should not delete a public template, got %v", err)
+	}
+	if err := svc.Delete(ctx, owner.ID, publicSaved.ID); err != nil {
+		t.Fatalf("owner should delete their public template: %v", err)
 	}
 	if len(seedEntries) > 0 {
 		if err := svc.Delete(ctx, owner.ID, seedEntries[0].toTemplate().ID); err != ErrForbidden {

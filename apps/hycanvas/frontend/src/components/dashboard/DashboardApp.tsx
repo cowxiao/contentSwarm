@@ -44,7 +44,7 @@ import {
   List,
   Users,
   Moon,
-  Sun, Sparkles, Wand2, Paperclip, Loader2, X } from "lucide-react";
+  Sun, Sparkles, Wand2, Paperclip, Loader2, X, Images } from "lucide-react";
 import { createBlankDesign, type DesignFile } from "@hc/schema";
 import { hycAccept, downloadHycFile, importedTitle, parseHycFile, readFileText } from "@/lib/hycFile";
 import { odpToDesign, pptxToDesign } from "@hc/export";
@@ -102,7 +102,8 @@ import { stageAiSources } from "@/lib/aiRequests";
 import { tr, trOr } from "@/lib/i18n";
 import { apiCodeMessage, userMessage } from "@/lib/errors";
 import { isContentSwarmManaged } from "@/lib/managedAuth";
-import { isDesignInZone, isTemplateInZone, templateZoneForFormat, type TemplateZone } from "@/lib/templateZones";
+import { isDesignInZone, isTemplateInZone, templateZoneForFormat, templateZoneFromQuery, templateZoneLabelKey, type TemplateZone } from "@/lib/templateZones";
+import { uploadFeaturedCovers } from "@/lib/featuredCovers";
 
 // Time-aware greeting for the dashboard hero band.
 function greetByHour(): string {
@@ -147,6 +148,7 @@ const formatGroups = (): { title: string; items: Format[] }[] => [
     title: tr("dashboard.social"),
     items: [
       { label: tr("dashboard.xiaohongshu_template_zone"), icon: LayoutTemplate, w: 1080, h: 1440, templateZone: "xiaohongshu" },
+      { label: tr("dashboard.featured_cover_zone"), icon: LayoutTemplate, w: 1080, h: 1440, templateZone: "featured" },
       { label: tr("dashboard.instagram_post_2"), icon: Instagram, w: 1080, h: 1080 },
       { label: tr("dashboard.instagram_story_2"), icon: Smartphone, w: 1080, h: 1920 },
       { label: tr("dashboard.facebook_post_2"), icon: Facebook, w: 1200, h: 630 },
@@ -338,6 +340,8 @@ export function DashboardApp({ view }: { view: DashboardView }) {
   const [pptxTemplateOpen, setPptxTemplateOpen] = useState(false); // F40 E13
   const [tplRefresh, setTplRefresh] = useState(0); // bump to re-fetch the template shelf
   const [collections, setCollections] = useState<TemplateCollectionSummary[]>([]);
+  const coverUploadRef = useRef<HTMLInputElement>(null);
+  const [coverProgress, setCoverProgress] = useState<{ done: number; total: number } | null>(null);
 
   const load = useCallback(async (q: string) => {
     if (!activeWorkspaceId) return [] as HomeItem[];
@@ -431,7 +435,7 @@ export function DashboardApp({ view }: { view: DashboardView }) {
     };
   }, [view, activeWorkspaceId, tplCollection, tplRefresh]);
 
-  const templateZone = router.query.zone === "xiaohongshu" ? "xiaohongshu" : null;
+  const templateZone = templateZoneFromQuery(router.query.zone);
   const zoneTemplates = templateZone
     ? templates.filter((t) => isTemplateInZone(t, templateZone))
     : templates;
@@ -592,6 +596,22 @@ export function DashboardApp({ view }: { view: DashboardView }) {
       downloadHycFile(await oc.getTemplateFile(t.id), t.title);
     } catch {
       toast.error(tr("dashboard.could_not_download_the_template"));
+    }
+  }
+
+  async function uploadCoverImages(files: FileList | null) {
+    if (!files?.length || !activeWorkspaceId || coverProgress) return;
+    const selected = [...files];
+    setCoverProgress({ done: 0, total: selected.length });
+    try {
+      const { uploaded, failed } = await uploadFeaturedCovers(activeWorkspaceId, selected, (done, total) =>
+        setCoverProgress({ done, total }),
+      );
+      if (uploaded > 0) setTplRefresh((n) => n + 1);
+      if (failed > 0) toast.error(tr("dashboard.cover_upload_failed"));
+      else toast.success(tr("dashboard.cover_images_uploaded", { n: uploaded }));
+    } finally {
+      setCoverProgress(null);
     }
   }
 
@@ -1216,6 +1236,33 @@ export function DashboardApp({ view }: { view: DashboardView }) {
                 <Button variant="secondary" size="sm" onClick={() => setPptxTemplateOpen(true)} title={tr("dashboard.build_a_template_from_a_powerpoint_file")}>
                   <FileUp size={15} /> {tr("dashboard.template_from_powerpoint")}
                 </Button>
+                {templateZone === "featured" && (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={coverProgress !== null}
+                      onClick={() => coverUploadRef.current?.click()}
+                      title={tr("dashboard.upload_cover_images")}
+                    >
+                      <Images size={15} />
+                      {coverProgress
+                        ? tr("dashboard.uploading_cover_images", { done: coverProgress.done, total: coverProgress.total })
+                        : tr("dashboard.upload_cover_images")}
+                    </Button>
+                    <input
+                      ref={coverUploadRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      multiple
+                      hidden
+                      onChange={(e) => {
+                        void uploadCoverImages(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                  </>
+                )}
                 <input
                   ref={importTemplateRef}
                   type="file"
@@ -1231,7 +1278,7 @@ export function DashboardApp({ view }: { view: DashboardView }) {
               {templateZone && (
                 <div className="mb-4 flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-ink">
                   <LayoutTemplate size={16} />
-                  <span className="font-semibold">{tr("dashboard.xiaohongshu_template_zone")}</span>
+                  <span className="font-semibold">{tr(templateZoneLabelKey(templateZone))}</span>
                   <span className="text-brand-700">{tr("dashboard.designs")} {visibleZoneDesigns.length} · {tr("dashboard.templates")} {filteredTemplates.length}</span>
                   <span className="flex-1" />
                   <button

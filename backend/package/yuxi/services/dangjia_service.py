@@ -36,7 +36,20 @@ from yuxi.storage.postgres.models_content import ContentTask
 
 INDUSTRY_SLUG = "decoration"
 CONTENT_GOAL = "acquire"
-TYPE_NAME_TO_CT_CODE = {"施工报价": "CT02"}
+TYPE_NAME_TO_CT_CODE = {
+    "自我介绍": "CT01",
+    "工艺展示": "CT06",
+    "日常工作": "CT07",
+}
+PRICE_FORMAT_TO_CT_CODE = {
+    "项目单价": "CT02",
+    "单价面积": "CT03",
+    "单价+面积": "CT03",
+    "工种总价": "CT04",
+    "人工辅材": "CT05",
+    "人工+辅材": "CT05",
+    "人工＋辅材": "CT05",
+}
 MAX_IMAGE_COUNT = 9
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 OBS_DOWNLOAD_TIMEOUT = 30.0
@@ -163,15 +176,34 @@ def _composition_layout_id(image_count: int) -> str | None:
     return layout_id
 
 
-def _resolve_ct_code(type_name: str) -> str:
-    ct_code = TYPE_NAME_TO_CT_CODE.get(type_name.strip())
-    if ct_code is None:
+def _resolve_ct_code(requirement: DangjiaRequirementType) -> str:
+    type_name = requirement.typeName.strip()
+    if type_name != "施工报价":
+        ct_code = TYPE_NAME_TO_CT_CODE.get(type_name)
+        if ct_code is None:
+            raise _dj_error(
+                422,
+                "DANGJIA_TYPE_NAME_UNMAPPED",
+                f"暂不支持的需求类型：{type_name}",
+            )
+        return ct_code
+
+    formats = {price.format.strip().replace(" ", "") for price in requirement.prices}
+    codes = {PRICE_FORMAT_TO_CT_CODE[item] for item in formats if item in PRICE_FORMAT_TO_CT_CODE}
+    unknown = sorted(formats - PRICE_FORMAT_TO_CT_CODE.keys())
+    if unknown:
         raise _dj_error(
             422,
-            "DANGJIA_TYPE_NAME_UNMAPPED",
-            f"暂不支持的需求类型：{type_name}",
+            "DANGJIA_PRICE_FORMAT_UNMAPPED",
+            f"施工报价包含未支持的报价类型：{'、'.join(unknown)}",
         )
-    return ct_code
+    if len(codes) != 1:
+        raise _dj_error(
+            422,
+            "DANGJIA_PRICE_FORMAT_CONFLICT",
+            "一次施工报价只能使用一种报价类型",
+        )
+    return codes.pop()
 
 
 def build_dangjia_form_values(payload: DangjiaContentCreate) -> dict[str, Any]:
@@ -309,7 +341,7 @@ async def create_dangjia_content(db: AsyncSession, user: User, payload: DangjiaC
     if existing is not None:
         return _task_response(existing, run_id=None, idempotent=True)
 
-    ct_code = _resolve_ct_code(payload.requirementType.typeName)
+    ct_code = _resolve_ct_code(payload.requirementType)
     cover_image = _require_cover_image(payload.images)
     # 先校验图片数量是否落在组合布局支持范围内，避免下载后才报错。
     _composition_layout_id(len(payload.images))

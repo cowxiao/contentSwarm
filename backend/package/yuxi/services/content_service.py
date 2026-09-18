@@ -911,11 +911,22 @@ async def save_content_brief(
     requested_image_item_id = selection.image_item_id if selection else None
     requested_poster_template_id = selection.poster_template_id if selection else None
     requested_hycanvas_template_id = selection.hycanvas_template_id if selection else None
-    if compile_now and requested_hycanvas_template_id and not requested_image_item_id:
+    requested_featured_cover_template_id = selection.featured_cover_template_id if selection else None
+    if requested_hycanvas_template_id and requested_featured_cover_template_id:
+        raise _content_error(
+            422,
+            "CONTENT_COVER_TEMPLATE_CONFLICT",
+            "内置封面与精选封面只能选择其一",
+        )
+    if (
+        compile_now
+        and (requested_hycanvas_template_id or requested_featured_cover_template_id)
+        and not requested_image_item_id
+    ):
         raise _content_error(
             422,
             "CONTENT_IMAGE_MATERIAL_REQUIRED",
-            "请选择一张图库图片作为 HyCanvas 封面主图",
+            "请选择一张图库图片作为封面背景图",
         )
     requested_composition = (
         selection.photo_composition.model_dump() if selection and selection.photo_composition else None
@@ -925,6 +936,7 @@ async def save_content_brief(
         task.selected_image_item_id != requested_image_item_id
         or task.selected_poster_template_id != requested_poster_template_id
         or current_visual_material.get("hycanvas_template_id") != requested_hycanvas_template_id
+        or current_visual_material.get("featured_cover_template_id") != requested_featured_cover_template_id
         or current_visual_material.get("photo_composition") != requested_composition
     ):
         raise _content_error(
@@ -934,7 +946,12 @@ async def save_content_brief(
         )
 
     visual_snapshot: dict[str, Any] | None = (
-        {} if requested_image_item_id or requested_poster_template_id or requested_hycanvas_template_id else None
+        {}
+        if requested_image_item_id
+        or requested_poster_template_id
+        or requested_hycanvas_template_id
+        or requested_featured_cover_template_id
+        else None
     )
     if requested_image_item_id:
         owner_uid = str(user.uid)
@@ -992,32 +1009,49 @@ async def save_content_brief(
     if requested_composition:
         from yuxi.services.content_photo_composition import resolve_photo_composition
 
-        if not requested_image_item_id or not requested_hycanvas_template_id:
+        if not requested_image_item_id or not (requested_hycanvas_template_id or requested_featured_cover_template_id):
             raise _content_error(422, "CONTENT_COMPOSITION_TEMPLATE_REQUIRED", "图片组合需要选择首图和封面模板")
         visual_snapshot["photo_composition"] = await resolve_photo_composition(
-            db, user, selection.photo_composition, requested_image_item_id, complete=compile_now,
+            db,
+            user,
+            selection.photo_composition,
+            requested_image_item_id,
+            complete=compile_now,
         )
-    if compile_now and requested_hycanvas_template_id:
+    if compile_now and (requested_hycanvas_template_id or requested_featured_cover_template_id):
         from yuxi.services.hycanvas_service import HyCanvasClient
 
         template_catalog = await HyCanvasClient.from_env().list_xiaohongshu_templates()
-        hycanvas_template = next(
-            (item for item in template_catalog["templates"] if item["id"] == requested_hycanvas_template_id),
-            None,
-        )
-        if hycanvas_template is None:
-            raise _content_error(
-                422,
-                "CONTENT_HYCANVAS_TEMPLATE_INVALID",
-                "所选 HyCanvas 小红书模板不存在或不可用",
+        catalog_by_id = {item["id"]: item for item in template_catalog["templates"]}
+        if requested_hycanvas_template_id:
+            hycanvas_template = catalog_by_id.get(requested_hycanvas_template_id)
+            if hycanvas_template is None or hycanvas_template.get("zone") != "builtin":
+                raise _content_error(
+                    422,
+                    "CONTENT_HYCANVAS_TEMPLATE_INVALID",
+                    "所选内置封面模板不存在或不可用",
+                )
+            visual_snapshot.update(
+                {
+                    "hycanvas_template_id": hycanvas_template["id"],
+                    "hycanvas_template_title": hycanvas_template["title"],
+                    "hycanvas_fillable_fields": hycanvas_template["fillable_fields"],
+                }
             )
-        visual_snapshot.update(
-            {
-                "hycanvas_template_id": hycanvas_template["id"],
-                "hycanvas_template_title": hycanvas_template["title"],
-                "hycanvas_fillable_fields": hycanvas_template["fillable_fields"],
-            }
-        )
+        if requested_featured_cover_template_id:
+            featured_template = catalog_by_id.get(requested_featured_cover_template_id)
+            if featured_template is None or featured_template.get("zone") != "featured":
+                raise _content_error(
+                    422,
+                    "CONTENT_FEATURED_COVER_TEMPLATE_INVALID",
+                    "所选精选封面不存在或不可用",
+                )
+            visual_snapshot.update(
+                {
+                    "featured_cover_template_id": featured_template["id"],
+                    "featured_cover_template_title": featured_template["title"],
+                }
+            )
     task.selected_image_item_id = requested_image_item_id
     task.selected_poster_template_id = requested_poster_template_id
     compiled["visual_material"] = (
@@ -1030,6 +1064,8 @@ async def save_content_brief(
             "poster_template_name": visual_snapshot.get("poster_template_name"),
             "hycanvas_template_id": requested_hycanvas_template_id,
             "hycanvas_template_title": visual_snapshot.get("hycanvas_template_title"),
+            "featured_cover_template_id": requested_featured_cover_template_id,
+            "featured_cover_template_title": visual_snapshot.get("featured_cover_template_title"),
             "photo_composition": requested_composition,
         }
         if visual_snapshot
@@ -1104,7 +1140,7 @@ async def _enqueue_content_run(
         "rule_version_id": task.rule_version_id,
     }
     try:
-        checkpoint_thread_id = f"content:{task.id}"
+        checkpoint_thread_id = f"content:{run_id}"
         if action in {"resume", "retry"} and parent_run_id:
             parent = await run_repo.get_run(parent_run_id)
             if parent and parent.checkpoint_thread_id:

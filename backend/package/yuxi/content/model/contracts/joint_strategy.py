@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-from math import isclose
 from typing import Any, Literal
 
 from pydantic import Field, field_validator, model_validator
@@ -124,8 +123,6 @@ def validate_joint_strategy(payload, inputs: dict[str, Any]) -> JointStrategyDec
         if any(score < 0 or score > 4 for score in item.dimensions.values()):
             raise ValueError("参考得分必须为 0—4 整数")
         total = sum(item.dimensions[key] / 4 * weight for key, weight in scale["weights"].items())
-        if item.total is not None and not isclose(total, item.total, abs_tol=0.001, rel_tol=0):
-            raise ValueError("参考总分与锁定权重不一致")
         item.total = total
         eligible.append(item)
     if reference.status != "selected":

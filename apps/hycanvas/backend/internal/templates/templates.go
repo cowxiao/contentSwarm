@@ -35,6 +35,17 @@ var (
 	ErrBadRequest = errors.New("bad request")
 )
 
+// templateZoneTags maps a design's template-zone id to the catalog tag the
+// zone filters on (dashboard zone views and contentSwarm's cover picker).
+// Ordered: the first matching tag wins when a template somehow carries two.
+var templateZoneTags = []struct {
+	zone string
+	tag  string
+}{
+	{"xiaohongshu", "小红书"},
+	{"featured", "精选封面"},
+}
+
 // StyleDescriptor is the extracted style for search/swap (doc 14).
 type StyleDescriptor struct {
 	Palette    []string         `json:"palette"`
@@ -343,13 +354,16 @@ func (s *Service) Apply(ctx context.Context, userID, templateID, workspaceID str
 		tags = row.Tags
 	}
 	applied, _ := deepCopyDesign(file)
-	if contains(tags, "小红书") {
-		meta := asObj(applied["meta"])
-		if meta == nil {
-			meta = map[string]any{}
-			applied["meta"] = meta
+	for _, zt := range templateZoneTags {
+		if contains(tags, zt.tag) {
+			meta := asObj(applied["meta"])
+			if meta == nil {
+				meta = map[string]any{}
+				applied["meta"] = meta
+			}
+			meta["templateZone"] = zt.zone
+			break
 		}
-		meta["templateZone"] = "xiaohongshu"
 	}
 	return s.persist.CreateDesign(ctx, workspaceID, title, applied, &userID)
 }
@@ -485,12 +499,15 @@ func (s *Service) SaveAsTemplate(ctx context.Context, userID string, in SaveInpu
 		if err != nil {
 			return Template{}, ErrNotFound
 		}
-		if zone == "xiaohongshu" {
-			if category == "" {
-				category = "小红书"
-			}
-			if !contains(tags, "小红书") {
-				tags = append(tags, "小红书")
+		for _, zt := range templateZoneTags {
+			if zone == zt.zone {
+				if category == "" {
+					category = zt.tag
+				}
+				if !contains(tags, zt.tag) {
+					tags = append(tags, zt.tag)
+				}
+				break
 			}
 		}
 		loaded, err := s.persist.LoadDesignFile(ctx, in.DesignID, dws)
@@ -599,6 +616,12 @@ func (s *Service) Delete(ctx context.Context, userID, templateID string) error {
 	}
 	switch row.Visibility {
 	case "private":
+		if row.OwnerID != userID {
+			return ErrForbidden
+		}
+	case "public":
+		// Featured-cover uploads are public; the uploader must be able to
+		// retract their own template (same self-service rule as shared assets).
 		if row.OwnerID != userID {
 			return ErrForbidden
 		}

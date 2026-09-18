@@ -84,8 +84,7 @@ def _payload(serial_no: str, images: list[dict], *, type_name: str = "施工报�
             "typeName": type_name,
             "quotationInfo": {"houseArea": "120平", "houseType": "三室两厅"},
             "prices": [
-                {"format": "半包", "content": "人工+辅材 6.8万"},
-                {"format": "全包", "content": "人工+辅材+主材 12.8万"},
+                {"format": "单价面积", "content": "防水 6 元/㎡ × 20㎡ = 120 元"},
             ],
             "mySite": "长沙市雨花区某某小区",
         },
@@ -199,11 +198,12 @@ async def test_dangjia_create_compile_run_and_idempotent_replay(test_client, adm
         assert form_values["pain"] == ["想搞清楚120平三室两厅的施工报价明细"]
         assert form_values["project_type"] == "三室两厅"
         assert form_values["area"] == "120平"
-        assert form_values["budget"] == "【半包】人工+辅材 6.8万\n【全包】人工+辅材+主材 12.8万"
+        assert form_values["budget"] == "【单价面积】防水 6 元/㎡ × 20㎡ = 120 元"
         assert "水电改造" in form_values["craft_and_materials"]
         assert form_values["project_site"] == "长沙市雨花区某某小区"
         assert form_values["content_tags"] == ["报价透明", "长沙装修"]
         assert form_values["type_name"] == "施工报价"
+        assert task["content_type_code"] == "CT03"
         assert task["brief"]["persona"]["description"].startswith("30岁，5年装修工龄，服务城市长沙市。")
 
         visual = task["brief"]["visual_material"]

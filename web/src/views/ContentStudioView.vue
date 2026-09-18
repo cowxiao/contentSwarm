@@ -162,6 +162,7 @@ const hycanvasPreviewQueue = []
 const hycanvasPreviewQueued = new Set()
 let hycanvasPreviewRunning = false
 const selectedHyCanvasTemplateId = ref('')
+const coverTemplateTab = ref('builtin')
 const hycanvasFields = reactive({})
 const hycanvasCreating = ref(false)
 const hycanvasDesign = ref(null)
@@ -209,6 +210,17 @@ const selectedImageRootGalleryId = computed(() => (
 const selectedHyCanvasTemplate = computed(() =>
   hycanvasTemplates.value.find((item) => item.id === selectedHyCanvasTemplateId.value) || null
 )
+const builtinCoverTemplates = computed(() => hycanvasTemplates.value.filter((item) => item.zone !== 'featured'))
+const featuredCoverTemplates = computed(() => hycanvasTemplates.value.filter((item) => item.zone === 'featured'))
+const featuredTemplateSelected = computed(() => selectedHyCanvasTemplate.value?.zone === 'featured')
+// 精选封面不参与实例化叠加:右侧面板直接展示参考图(模板自身渲染图),
+// 内置封面保持「封面原图+模板」合成预览。
+const templatePreviewPanelUrl = computed(() =>
+  featuredTemplateSelected.value
+    ? hycanvasTemplateUrls.value[selectedHyCanvasTemplateId.value] || ''
+    : hycanvasCompositePreviewUrl.value
+)
+const templatePreviewPanelLabel = computed(() => (featuredTemplateSelected.value ? '参考图' : '模板叠加效果'))
 const hasViralReference = computed(() => hasSelectedViralReference(store.artifact))
 const resultVisualMaterial = computed(() => (
   store.artifact?.runtime_config_snapshot?.visual_material ||
@@ -360,10 +372,13 @@ const loadHyCanvasTemplates = async () => {
       item.id,
       item.preview_urls?.[0]?.startsWith('/api/content/covers/hycanvas/templates/') ? '' : item.preview_urls?.[0] || ''
     ]))
+    const savedVisual = store.task?.brief?.visual_material || {}
     selectedHyCanvasTemplateId.value =
-      store.task?.brief?.visual_material?.hycanvas_template_id ||
+      savedVisual.hycanvas_template_id ||
+      savedVisual.featured_cover_template_id ||
       store.artifact?.hycanvas_design_snapshot?.template_id ||
       ''
+    coverTemplateTab.value = savedVisual.featured_cover_template_id ? 'featured' : 'builtin'
     initializeHyCanvasFields()
   } catch (error) {
     if (error?.response?.data?.detail?.code !== 'hycanvas_not_configured') {
@@ -796,7 +811,8 @@ const initializeVisualSelection = () => {
   selectedImageItemId.value = store.task?.selected_image_item_id || saved.image_item_id || ''
   selectedPosterTemplateId.value =
     store.task?.selected_poster_template_id || saved.poster_template_id || ''
-  selectedHyCanvasTemplateId.value = saved.hycanvas_template_id || ''
+  selectedHyCanvasTemplateId.value = saved.hycanvas_template_id || saved.featured_cover_template_id || ''
+  coverTemplateTab.value = saved.featured_cover_template_id ? 'featured' : 'builtin'
   photoComposition.value = saved.photo_composition || null
 }
 
@@ -1472,7 +1488,9 @@ watch(
   [selectedImageItemId, selectedHyCanvasTemplateId],
   ([imageItemId, templateId]) => {
     window.clearTimeout(compositionPreviewTimer)
-    compositionPreviewTimer = window.setTimeout(() => void loadHyCanvasCompositePreview(imageItemId, templateId), 350)
+    const template = hycanvasTemplates.value.find((item) => item.id === templateId)
+    const previewTemplateId = template?.zone === 'featured' ? '' : templateId
+    compositionPreviewTimer = window.setTimeout(() => void loadHyCanvasCompositePreview(imageItemId, previewTemplateId), 350)
   },
   { deep: true }
 )
@@ -1599,7 +1617,8 @@ const buildBrief = () => ({
     ? {
         image_item_id: selectedImageItemId.value || null,
         poster_template_id: null,
-        hycanvas_template_id: selectedHyCanvasTemplateId.value,
+        hycanvas_template_id: featuredTemplateSelected.value ? null : selectedHyCanvasTemplateId.value || null,
+        featured_cover_template_id: featuredTemplateSelected.value ? selectedHyCanvasTemplateId.value : null,
         photo_composition: photoComposition.value
       }
     : null
@@ -1659,7 +1678,7 @@ const compileBrief = async () => {
     return
   }
   if (!selectedHyCanvasTemplateId.value) {
-    message.warning('请选择一个 HyCanvas 小红书模板')
+    message.warning('请选择一个封面模板（内置封面或精选封面）')
     return
   }
   try {
@@ -2085,21 +2104,25 @@ const openVersions = async () => {
                     </div>
                     <div class="selected-gallery-preview-card">
                       <span class="selected-gallery-preview-media">
-                        <LoaderCircle v-if="hycanvasCompositePreviewLoading" class="spin" :size="18" />
+                        <LoaderCircle v-if="!featuredTemplateSelected && hycanvasCompositePreviewLoading" class="spin" :size="18" />
                         <button
-                          v-else-if="hycanvasCompositePreviewUrl"
+                          v-else-if="templatePreviewPanelUrl"
                           type="button"
                           class="selected-gallery-preview-trigger"
-                          aria-label="放大查看模板叠加效果"
+                          :aria-label="`放大查看${templatePreviewPanelLabel}`"
                           @click="openImagePreview(
-                            hycanvasCompositePreviewUrl,
-                            '模板叠加效果',
-                            `${selectedHyCanvasTemplate?.title || '模板'}合成效果`
+                            templatePreviewPanelUrl,
+                            templatePreviewPanelLabel,
+                            featuredTemplateSelected
+                              ? `${selectedHyCanvasTemplate?.title || '精选封面'}参考图`
+                              : `${selectedHyCanvasTemplate?.title || '模板'}合成效果`
                           )"
                         >
                           <img
-                            :src="hycanvasCompositePreviewUrl"
-                            :alt="`${selectedHyCanvasTemplate?.title || '模板'}合成效果`"
+                            :src="templatePreviewPanelUrl"
+                            :alt="featuredTemplateSelected
+                              ? `${selectedHyCanvasTemplate?.title || '精选封面'}参考图`
+                              : `${selectedHyCanvasTemplate?.title || '模板'}合成效果`"
                           />
                           <span class="selected-gallery-preview-zoom" aria-hidden="true">
                             <ZoomIn :size="20" />
@@ -2107,8 +2130,8 @@ const openVersions = async () => {
                         </button>
                         <LayoutTemplate v-else :size="22" />
                       </span>
-                      <strong>模板叠加效果</strong>
-                      <small>{{ selectedHyCanvasTemplate?.title || '选择模板后生成' }}</small>
+                      <strong>{{ templatePreviewPanelLabel }}</strong>
+                      <small>{{ selectedHyCanvasTemplate?.title || (featuredTemplateSelected ? '选择参考图后显示' : '选择模板后生成') }}</small>
                     </div>
                   </div>
                   <a-button
@@ -2125,13 +2148,18 @@ const openVersions = async () => {
               <div class="material-selector-block template-selector-block">
                 <div class="material-selector-title">
                   <div>
-                    <LayoutTemplate :size="18" /><strong>HyCanvas 小红书模板专区</strong><em>必选 · 单选</em>
+                    <LayoutTemplate :size="18" /><strong>HyCanvas 封面模板专区</strong><em>必选 · 单选</em>
                   </div>
-                  <small>标题、副标题和图库原图将在内容生成后自动填入，并保留可编辑设计稿。</small>
+                  <a-radio-group v-model:value="coverTemplateTab" size="small">
+                    <a-radio-button value="builtin">内置封面</a-radio-button>
+                    <a-radio-button value="featured">精选封面</a-radio-button>
+                  </a-radio-group>
                 </div>
+                <small v-if="coverTemplateTab === 'builtin'" class="template-zone-hint">标题、副标题和图库原图将在内容生成后自动填入，并保留可编辑设计稿。</small>
+                <small v-else class="template-zone-hint">精选封面仅作为风格参考图：与背景图一起交给 AI 自由创作，产出 PNG 封面（需要已配置 image2 中转站）。</small>
                 <div class="poster-choice-grid">
                   <button
-                    v-for="item in hycanvasTemplates"
+                    v-for="item in (coverTemplateTab === 'builtin' ? builtinCoverTemplates : featuredCoverTemplates)"
                     :key="item.id"
                     :ref="(element) => observeHyCanvasPreview(element, item.id)"
                     type="button"
@@ -2153,7 +2181,14 @@ const openVersions = async () => {
                     />
                   </button>
                 </div>
-                <a-empty v-if="!hycanvasTemplates.length" description="HyCanvas 尚未配置或暂无小红书模板" />
+                <a-empty
+                  v-if="coverTemplateTab === 'builtin' && !builtinCoverTemplates.length"
+                  description="HyCanvas 尚未配置或暂无内置封面模板"
+                />
+                <a-empty
+                  v-else-if="coverTemplateTab === 'featured' && !featuredCoverTemplates.length"
+                  description="暂无精选封面，请先在 HyCanvas 精选封面专区上传"
+                />
               </div>
             </a-spin>
           </section>
@@ -2570,9 +2605,9 @@ const openVersions = async () => {
                 </a-button>
               </div>
               <a-spin :spinning="hycanvasTemplatesLoading">
-                <div v-if="hycanvasTemplates.length" class="hycanvas-template-grid">
+                <div v-if="builtinCoverTemplates.length" class="hycanvas-template-grid">
                   <button
-                    v-for="item in hycanvasTemplates"
+                    v-for="item in builtinCoverTemplates"
                     :key="item.id"
                     :ref="(element) => observeHyCanvasPreview(element, item.id)"
                     type="button"
@@ -2584,7 +2619,7 @@ const openVersions = async () => {
                     <small>{{ item.format?.width }} × {{ item.format?.height }}</small>
                   </button>
                 </div>
-                <a-empty v-else description="HyCanvas 尚未配置或暂无小红书模板" />
+                <a-empty v-else description="HyCanvas 尚未配置或暂无内置封面模板" />
               </a-spin>
               <div v-if="selectedHyCanvasTemplate" class="hycanvas-fields">
                 <label v-for="field in selectedHyCanvasTemplate.fillable_fields.filter((item) => item.kind === 'text' && item.semanticRole !== 'label')" :key="field.nodeId">
@@ -2605,7 +2640,7 @@ const openVersions = async () => {
                 <a-button
                   type="primary"
                   :loading="hycanvasCreating"
-                  :disabled="!selectedHyCanvasTemplate"
+                  :disabled="!selectedHyCanvasTemplate || featuredTemplateSelected"
                   @click="createHyCanvasDesign"
                 >
                   <WandSparkles :size="15" />创建可编辑视觉稿
@@ -3039,6 +3074,7 @@ const openVersions = async () => {
 .material-selector-title > div { display: flex; align-items: center; gap: 7px; }
 .material-selector-title em { padding: 2px 7px; border-radius: 999px; color: var(--main-700); background: var(--main-30); font-size: 11px; font-style: normal; }
 .material-selector-title small { color: var(--color-text-tertiary); text-align: right; }
+.template-zone-hint { display: block; margin: -6px 0 10px; color: var(--color-text-tertiary); }
 .template-sync-status { display: inline-flex; align-items: center; gap: 4px; color: var(--color-success-700); font-size: 11px; white-space: nowrap; }
 .gallery-folder-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
 .gallery-folder-card { position: relative; min-height: 92px; padding: 15px; display: flex; align-items: center; gap: 12px; border: 1px solid var(--gray-150); border-radius: 9px; color: var(--color-text); background: var(--gray-0); text-align: left; cursor: pointer; }

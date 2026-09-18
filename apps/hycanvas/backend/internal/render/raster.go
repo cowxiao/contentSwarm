@@ -48,6 +48,9 @@ import (
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 	"golang.org/x/image/vector"
+	// Uploads accept image/webp; without this the exporters' image.Decode
+	// rejects it and webp images export blank.
+	_ "golang.org/x/image/webp"
 )
 
 // mat is a 2D affine transform [a b c d e f]: (x,y) -> (a*x+c*y+e, b*x+d*y+f).

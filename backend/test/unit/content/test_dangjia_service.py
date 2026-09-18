@@ -16,7 +16,13 @@ from yuxi.services.dangjia_service import (
 VALID_TEMPLATE_ID = "b585947e-8413-4dd5-a7b5-d1486ec81882"
 
 
-def make_payload(*, image_count: int = 2, cover_indexes: tuple[int, ...] = (0,), type_name: str = "施工报价"):
+def make_payload(
+    *,
+    image_count: int = 2,
+    cover_indexes: tuple[int, ...] = (0,),
+    type_name: str = "施工报价",
+    price_formats: tuple[str, ...] = ("工种总价",),
+):
     images = []
     for index in range(image_count):
         images.append(
@@ -43,8 +49,8 @@ def make_payload(*, image_count: int = 2, cover_indexes: tuple[int, ...] = (0,),
                 "typeName": type_name,
                 "quotationInfo": {"houseArea": "115平", "houseType": "三室二厅"},
                 "prices": [
-                    {"format": "工种总价", "content": "拆除：1954元；人工合计：33341元"},
-                    {"format": "人工辅材", "content": "总价：6.6w"},
+                    {"format": price_format, "content": f"{price_format}测试报价"}
+                    for price_format in price_formats
                 ],
                 "mySite": "湖南省长沙市岳麓区梅溪湖街道金茂府",
             },
@@ -73,8 +79,7 @@ def test_form_values_map_quotation_and_prices():
     assert values["external_source"] == "dangjia"
     assert values["project_type"] == "三室二厅"
     assert values["area"] == "115平"
-    assert "【工种总价】拆除：1954元" in values["budget"]
-    assert "【人工辅材】总价：6.6w" in values["budget"]
+    assert values["budget"] == "【工种总价】工种总价测试报价"
     assert "水电" in values["craft_and_materials"]
     assert values["advantage"] == ["决策快效率高", "自有工人无转包"]
     assert values["project_site"] == "湖南省长沙市岳麓区梅溪湖街道金茂府"
@@ -109,10 +114,37 @@ def test_composition_layout_supports_grid_counts_only():
 
 
 def test_resolve_ct_code_maps_known_type_and_rejects_unknown():
-    assert _resolve_ct_code("施工报价") == "CT02"
+    for type_name, expected in {"自我介绍": "CT01", "工艺展示": "CT06", "日常工作": "CT07"}.items():
+        payload = make_payload(type_name=type_name)
+        assert _resolve_ct_code(payload.requirementType) == expected
+
+    for price_format, expected in {
+        "项目单价": "CT02",
+        "单价面积": "CT03",
+        "单价+面积": "CT03",
+        "工种总价": "CT04",
+        "人工辅材": "CT05",
+        "人工+辅材": "CT05",
+    }.items():
+        payload = make_payload(price_formats=(price_format,))
+        assert _resolve_ct_code(payload.requirementType) == expected
+
+    payload = make_payload(type_name="开荒保洁")
     with pytest.raises(HTTPException) as exc:
-        _resolve_ct_code("开荒保洁")
+        _resolve_ct_code(payload.requirementType)
     assert exc.value.detail["error"]["code"] == "DANGJIA_TYPE_NAME_UNMAPPED"
+
+
+def test_resolve_ct_code_rejects_unknown_or_conflicting_quotation_formats():
+    payload = make_payload(price_formats=("半包",))
+    with pytest.raises(HTTPException) as unknown:
+        _resolve_ct_code(payload.requirementType)
+    assert unknown.value.detail["error"]["code"] == "DANGJIA_PRICE_FORMAT_UNMAPPED"
+
+    payload = make_payload(price_formats=("单价面积", "工种总价"))
+    with pytest.raises(HTTPException) as conflict:
+        _resolve_ct_code(payload.requirementType)
+    assert conflict.value.detail["error"]["code"] == "DANGJIA_PRICE_FORMAT_CONFLICT"
 
 
 def test_brief_builds_visual_material_with_cover_first():

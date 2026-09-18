@@ -104,7 +104,6 @@ def test_envelope_paths_are_normalized_and_scores_are_calculated():
         "missing_slot",
         "fake_path",
         "original_fact",
-        "score",
         "missing_candidate",
         "unexpected_blueprint",
     ],
@@ -122,14 +121,21 @@ def test_joint_decision_rejects_invalid_reference(problem):
         ref["slot_mapping"]["pain"] = ["content_brief.missing"]
     elif problem == "original_fact":
         ref["slot_mapping"]["pain"] = ["reference_candidates.0.reference_card"]
-    elif problem == "score":
-        ref["assessments"][1]["total"] = 99
     elif problem == "missing_candidate":
         ref["assessments"].pop(0)
     elif problem == "unexpected_blueprint":
         ref["reference_blueprint"] = {"title_pattern": "伪造"}
     with pytest.raises(ValueError):
         validate_joint_strategy(result, inputs)
+
+
+def test_joint_decision_recomputes_model_supplied_reference_total():
+    inputs, result = joint_example()
+    result["reference"]["assessments"][1]["total"] = 99
+
+    validated = validate_joint_strategy(result, inputs)
+
+    assert validated.reference.assessments[1].total == 100
 
 
 def test_no_card_is_explicit_and_original_needs_no_reference():

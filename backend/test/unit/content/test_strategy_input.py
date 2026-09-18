@@ -169,3 +169,20 @@ def test_projection_keeps_type_conflicts_and_uses_locked_persona():
     assert view["content_brief"]["form_values"]["count"] is True
     assert "persona" not in view["content_brief"]
     assert payload["content_brief"]["persona"] == {"tone": "旧简报人设"}
+
+
+def test_projection_keeps_single_copy_of_user_request():
+    payload, _ = joint_example("viral_rewrite")
+    request = '{"serialNo":"001","requirementType":{"typeName":"自我介绍"}}'
+    payload["content_brief"].update(
+        user_request=request,
+        form_values={"user_request": request},
+        business_variables={"user_request": request},
+    )
+
+    view = project_strategy_input(payload, channel_profile={}, persona_profile={})
+
+    assert view["content_brief"]["user_request"] == request
+    assert view["content_brief"]["form_values"] == {}
+    assert view["content_brief"]["business_variables"] == {}
+    assert view["strategy_candidates"]["available_input_paths"] == ["content_brief.user_request"]
