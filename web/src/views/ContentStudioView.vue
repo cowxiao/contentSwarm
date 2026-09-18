@@ -455,6 +455,9 @@ const activeFields = computed(() => {
     : store.template?.pro_form_schema || []
 })
 const isQuickMode = computed(() => (store.task ? store.task.mode : creation.mode) === 'quick')
+const historicalOriginal = computed(
+  () => store.task && store.task.runtime_config_snapshot?.creation_mode !== 'viral_rewrite'
+)
 const titleOptions = computed(
   () => store.interrupt?.options || store.task?.title_candidates || []
 )
@@ -1551,6 +1554,7 @@ onMounted(async () => {
       if (route.query.resultDetail === '1' && store.artifact) resultDetailOpen.value = true
       if (stage.value === 1) await loadVisualMaterials()
       if (
+        !historicalOriginal.value &&
         store.task?.latest_run_id &&
         [
           'queued',
@@ -1957,6 +1961,13 @@ const openVersions = async () => {
     </header>
 
     <main v-if="!store.loading.bootstrap" class="studio-main">
+      <section v-if="historicalOriginal" class="stage-panel">
+        <h2>历史原创任务仅供查看</h2>
+        <p>原创生成与编辑已停止。已有结果和运行记录仍可在历史详情中查看。</p>
+        <a-button v-if="store.artifact" @click="router.push(`/content/results/${store.task.id}`)">查看历史结果</a-button>
+        <a-button v-else @click="router.push('/content/history')">返回生成历史</a-button>
+      </section>
+      <template v-else>
       <ContentStudioToolbar
         v-if="stage !== 2 || (!store.currentRun && !store.interrupt)"
         :has-task="Boolean(store.task)"
@@ -2682,6 +2693,7 @@ const openVersions = async () => {
         </div>
         <a-empty v-else description="内容资产尚未生成完成" />
       </section>
+      </template>
     </main>
 
     <div v-else class="page-loading"><LoaderCircle class="spin" :size="28" />正在加载内容工作台</div>
