@@ -194,9 +194,9 @@ export function buildCoverElement(preset: CoverElement, page: { width: number; h
 }
 
 export const coverLayouts = [
-  { id: "quote", name: "报价封面", description: "一个价格数字搭配一个户型标签", background: "#fffaf2" },
-  { id: "craft", name: "工艺清单", description: "双行标题配步骤序号，适合施工与避坑", background: "#f0f6f3" },
-  { id: "service", name: "服务介绍", description: "突出身份、服务范围与面积信息", background: "#f1f4fc" },
+  { id: "quote", name: "报价封面", description: "透明底 · 一个价格数字搭配一个户型标签" },
+  { id: "craft", name: "工艺清单", description: "透明底 · 双行标题配步骤序号，适合施工与避坑" },
+  { id: "service", name: "服务介绍", description: "透明底 · 突出身份、服务范围与面积信息" },
 ] as const;
 
 export const coverStyleTemplates = coverElements.filter((item) => item.category === "标题" || item.category === "副标题");
@@ -281,7 +281,7 @@ export function buildBeforeAfterCover(top?: CoverBackground, bottom?: CoverBackg
   const file = createBlankDesign({ width: 1080, height: 1440 });
   file.title = file.pages[0].name = "装修前后对比 · 装修第一步";
   const page = file.pages[0];
-  page.background = { type: "solid", color: fromHex("#1a1a1a")! };
+  delete page.background;
   for (const [index, photo] of [top, bottom].entries()) {
     const y = index * 720;
     if (photo) {
@@ -341,7 +341,7 @@ export function buildCoverLayout(id: (typeof coverLayouts)[number]["id"], backgr
   file.title = layout.name;
   const page = file.pages[0];
   page.name = layout.name;
-  page.background = { type: "solid", color: fromHex(layout.background)! };
+  delete page.background;
   let slots = (background ? photoSlots : layoutSlots)[id];
   let separator: { x: number; y: number } | undefined;
   if (composition) {

@@ -102,7 +102,7 @@ import { stageAiSources } from "@/lib/aiRequests";
 import { tr, trOr } from "@/lib/i18n";
 import { apiCodeMessage, userMessage } from "@/lib/errors";
 import { isContentSwarmManaged } from "@/lib/managedAuth";
-import { isDesignInZone, isTemplateInZone, templateZoneForFormat, templateZoneFromQuery, templateZoneLabelKey, type TemplateZone } from "@/lib/templateZones";
+import { isTemplateInZone, templateZoneForFormat, templateZoneFromQuery, templateZoneLabelKey, type TemplateZone } from "@/lib/templateZones";
 import { uploadFeaturedCovers } from "@/lib/featuredCovers";
 
 // Time-aware greeting for the dashboard hero band.
@@ -440,12 +440,6 @@ export function DashboardApp({ view }: { view: DashboardView }) {
     ? templates.filter((t) => isTemplateInZone(t, templateZone))
     : templates;
   const filteredTemplates = zoneTemplates;
-  const zoneDesigns = templateZone
-    ? items.filter((item) => isDesignInZone(item, templateZone)).sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-    : [];
-  // Collections classify templates, not ordinary designs. Once a collection is
-  // selected, keep the result area scoped to templates in that collection.
-  const visibleZoneDesigns = tplCollection ? [] : zoneDesigns;
   // Recents sort (client-side): last edited or name. Shared by Home + Favorites.
   const bySort = (a: HomeItem, b: HomeItem) =>
     sortBy === "name" ? a.title.localeCompare(b.title) : new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
@@ -1279,7 +1273,7 @@ export function DashboardApp({ view }: { view: DashboardView }) {
                 <div className="mb-4 flex items-center gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-ink">
                   <LayoutTemplate size={16} />
                   <span className="font-semibold">{tr(templateZoneLabelKey(templateZone))}</span>
-                  <span className="text-brand-700">{tr("dashboard.designs")} {visibleZoneDesigns.length} · {tr("dashboard.templates")} {filteredTemplates.length}</span>
+                  <span className="text-brand-700">{tr("dashboard.templates")} {filteredTemplates.length}</span>
                   <span className="flex-1" />
                   <button
                     onClick={() => void router.push(dashboardPath("templates"))}
@@ -1308,16 +1302,10 @@ export function DashboardApp({ view }: { view: DashboardView }) {
                   </button>
                 ))}
               </div>
-              {templateZone && visibleZoneDesigns.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-neutral-400">{tr("dashboard.designs")} ({visibleZoneDesigns.length})</h3>
-                  <ul className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{visibleZoneDesigns.map((item) => renderCard(item))}</ul>
-                </div>
-              )}
               {templateZone && filteredTemplates.length > 0 && (
                 <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-neutral-400">{tr("dashboard.templates")} ({filteredTemplates.length})</h3>
               )}
-              {filteredTemplates.length === 0 && visibleZoneDesigns.length === 0 && !templateZone ? (
+              {filteredTemplates.length === 0 ? (
                 <EmptyState message={tr("dashboard.no_templates_yet_open_a_design_and_use_save")} />
               ) : filteredTemplates.length > 0 ? (
                 <ul className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -1326,7 +1314,7 @@ export function DashboardApp({ view }: { view: DashboardView }) {
                       <button
                         onClick={() => void applyTemplate(t)}
                         disabled={busy}
-                        title={tr("dashboard.use_this_template")}
+                        title={tr("dashboard.create_from_template")}
                         className="block w-full text-start disabled:opacity-60"
                       >
                         <div className="aspect-[4/3] overflow-hidden rounded-t-2xl bg-neutral-100"><DesignThumb templateId={t.id} previewUrl={t.previewUrls[0]} /></div>
@@ -1345,7 +1333,14 @@ export function DashboardApp({ view }: { view: DashboardView }) {
                           <MoreHorizontal size={16} />
                         </IconButton>
                         {menuFor === `template:${t.id}` && (
-                          <div className="absolute end-0 z-30 mt-1 w-36 overflow-hidden rounded-xl border border-neutral-200 bg-surface py-1 text-sm shadow-lg" onClick={(event) => event.stopPropagation()}>
+                          <div className="absolute end-0 z-30 mt-1 w-44 overflow-hidden rounded-xl border border-neutral-200 bg-surface py-1 text-sm shadow-lg" onClick={(event) => event.stopPropagation()}>
+                            <MenuRow icon={Copy} onClick={() => { setMenuFor(null); void applyTemplate(t); }}>{tr("dashboard.create_from_template")}</MenuRow>
+                            {t.sourceDesignId && (
+                              <MenuRow icon={Pencil} onClick={() => {
+                                setMenuFor(null);
+                                void open(t.sourceDesignId!);
+                              }}>{tr("dashboard.edit_source_template")}</MenuRow>
+                            )}
                             <MenuRow icon={FileDown} onClick={() => { setMenuFor(null); void downloadTemplateHyc(t); }}>{tr("dashboard.download_as_hyc_file")}</MenuRow>
                             {canManageTemplate(t) && (
                               <>

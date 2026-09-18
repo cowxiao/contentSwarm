@@ -306,6 +306,7 @@ async def _find_task_by_serial(db: AsyncSession, user: User, serial_no: str) -> 
         .where(
             ContentTask.created_by == str(user.uid),
             ContentTask.deleted_at.is_(None),
+            ContentTask.latest_run_id.is_not(None),
             serial == serial_no,
         )
         .order_by(ContentTask.created_at.desc())

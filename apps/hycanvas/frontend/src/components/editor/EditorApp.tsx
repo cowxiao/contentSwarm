@@ -1207,14 +1207,16 @@ export function EditorApp() {
       {shareOpen && designId && (
         <ShareDialog key={designId} open onClose={() => { setShareOpen(false); setShareFocusRequests(false); }} designId={designId} focusRequests={shareFocusRequests} />
       )}
-      <SaveAsTemplateDialog
-        key={designId ?? "unsaved"}
-        open={templateOpen}
-        onClose={() => setTemplateOpen(false)}
-        onSaved={async () => { await save(false); }}
-        designId={designId}
-        workspaceId={workspaceId}
-      />
+      {templateOpen && (
+        <SaveAsTemplateDialog
+          key={designId ?? "unsaved"}
+          open
+          onClose={() => setTemplateOpen(false)}
+          onSaved={async () => { await save(false); }}
+          designId={designId}
+          workspaceId={workspaceId}
+        />
+      )}
       {publishOpen && <PublishDialog open onClose={() => setPublishOpen(false)} designId={designId ?? undefined} workspaceId={workspaceId ?? undefined} />}
       {websiteOpen && <WebsiteDialog open onClose={() => setWebsiteOpen(false)} designId={designId ?? undefined} workspaceId={workspaceId ?? undefined} />}
       {printOpen && <PrintDialog open onClose={() => setPrintOpen(false)} />}

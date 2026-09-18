@@ -153,6 +153,49 @@ async def test_dangjia_missing_task_and_run_return_not_found(test_client, admin_
     assert run_response.status_code == 404
 
 
+async def test_dangjia_retry_ignores_draft_without_run(test_client, admin_headers):
+    serial_no = f"pytest-{uuid.uuid4().hex[:12]}"
+    bootstrap = await test_client.get("/api/content/bootstrap", headers=admin_headers)
+    assert bootstrap.status_code == 200, bootstrap.text
+    template = next(item for item in bootstrap.json()["industry_templates"] if item["slug"] == "decoration")
+    created = await test_client.post(
+        "/api/content/tasks",
+        headers=admin_headers,
+        json={
+            "industry_template_id": template["id"],
+            "mode": "quick",
+            "content_goal": "acquire",
+            "content_type_code": "CT03",
+            "name": "pytest 当家失败重试草稿",
+        },
+    )
+    assert created.status_code == 200, created.text
+    task_id = created.json()["task"]["id"]
+    try:
+        saved = await test_client.put(
+            f"/api/content/tasks/{task_id}/brief",
+            headers=admin_headers,
+            json={
+                "brief": {
+                    "form_values": {
+                        "external_serial_no": serial_no,
+                        "external_source": "dangjia",
+                    }
+                }
+            },
+        )
+        assert saved.status_code == 200, saved.text
+
+        payload = _payload(serial_no, _fake_images(1, cover_indexes=()))
+        retried = await test_client.post("/api/dangjia/content/tasks", json=payload, headers=admin_headers)
+
+        assert retried.status_code == 422, retried.text
+        assert retried.json()["detail"]["error"]["code"] == "DANGJIA_COVER_IMAGE_INVALID"
+    finally:
+        deleted = await test_client.delete(f"/api/content/tasks/{task_id}", headers=admin_headers)
+        assert deleted.status_code == 200, deleted.text
+
+
 async def test_dangjia_create_compile_run_and_idempotent_replay(test_client, admin_headers, image_server):
     templates_response = await test_client.get("/api/content/covers/hycanvas/templates", headers=admin_headers)
     assert templates_response.status_code == 200, templates_response.text

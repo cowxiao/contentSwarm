@@ -129,9 +129,32 @@ func TestRowToTemplateUsesDeclaredFieldsFromDesignMeta(t *testing.T) {
 	}
 }
 
+func TestRowToTemplateForUserOnlyExposesOwnedSourceDesign(t *testing.T) {
+	sourceDesignID := "source-design"
+	now := time.Now()
+	row := TemplateRow{
+		ID: "custom-template", OwnerID: "owner", SourceDesignID: &sourceDesignID,
+		Title: "项目案例封面", Visibility: "public", File: json.RawMessage(`{"pages":[]}`),
+		Style: json.RawMessage(`{}`), FillableFields: json.RawMessage(`[]`),
+		Attributions: json.RawMessage(`[]`), CreatedAt: now, UpdatedAt: now,
+	}
+
+	owned := rowToTemplateForUser(row, "owner")
+	if owned.SourceDesignID == nil || *owned.SourceDesignID != sourceDesignID {
+		t.Fatalf("owner source design = %v", owned.SourceDesignID)
+	}
+	shared := rowToTemplateForUser(row, "viewer")
+	if shared.SourceDesignID != nil {
+		t.Fatalf("viewer must not receive source design, got %q", *shared.SourceDesignID)
+	}
+}
+
 func TestDeepCopyDesign(t *testing.T) {
 	file := map[string]any{
 		"id": "orig",
+		"meta": map[string]any{"brandEditableFields": []any{
+			map[string]any{"nodeId": "a", "kind": "text", "label": "标题"},
+		}},
 		"pages": []any{map[string]any{
 			"id": "p1", "children": []any{
 				map[string]any{"id": "a", "type": "shape"},
@@ -161,6 +184,10 @@ func TestDeepCopyDesign(t *testing.T) {
 	attach := conn["start"].(map[string]any)["attach"].(map[string]any)
 	if attach["nodeId"] != newA {
 		t.Fatalf("connector attach should remap to %q, got %v (idMap %v)", newA, attach["nodeId"], idMap["a"])
+	}
+	field := asObj(asArr(asObj(copy["meta"])["brandEditableFields"])[0])
+	if field["nodeId"] != newA {
+		t.Fatalf("template field should remap to %q, got %v", newA, field["nodeId"])
 	}
 }
 
@@ -639,6 +666,28 @@ func TestTemplates_DB(t *testing.T) {
 	zoneSaved, err := svc.SaveAsTemplate(ctx, owner.ID, SaveInput{WorkspaceID: ws.ID, DesignID: zoneRec.ID, Title: "Zone Template", Visibility: "workspace"})
 	if err != nil || !contains(zoneSaved.Tags, "小红书") || len(zoneSaved.Categories) != 1 || zoneSaved.Categories[0] != "小红书" {
 		t.Fatalf("zone tag not inherited: %+v err=%v", zoneSaved, err)
+	}
+	zoneDesign["title"] = "Updated source snapshot"
+	zoneResaved, err := svc.SaveAsTemplate(ctx, owner.ID, SaveInput{
+		WorkspaceID: ws.ID, DesignID: zoneRec.ID, File: zoneDesign,
+		Title: "Updated Zone Template", Visibility: "workspace",
+	})
+	if err != nil {
+		t.Fatalf("re-save zone template: %v", err)
+	}
+	if zoneResaved.ID != zoneSaved.ID || zoneResaved.Title != "Updated Zone Template" {
+		t.Fatalf("re-saving one design should update its template: first=%+v second=%+v", zoneSaved, zoneResaved)
+	}
+	var linkedTemplateCount int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM "templates" WHERE "source_design_id" = $1`, zoneRec.ID).Scan(&linkedTemplateCount); err != nil {
+		t.Fatalf("count templates linked to source design: %v", err)
+	}
+	if linkedTemplateCount != 1 {
+		t.Fatalf("source design created %d templates, want 1", linkedTemplateCount)
+	}
+	zoneTemplateFile, err := svc.GetFile(ctx, owner.ID, zoneResaved.ID)
+	if err != nil || asStr(zoneTemplateFile["title"]) != "Updated source snapshot" {
+		t.Fatalf("re-save should use the current inline snapshot: file=%+v err=%v", zoneTemplateFile, err)
 	}
 	appliedZoneID, err := svc.Apply(ctx, owner.ID, zoneSaved.ID, ws.ID)
 	if err != nil {

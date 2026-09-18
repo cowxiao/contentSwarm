@@ -104,7 +104,7 @@ export function buildXhsEditorialCover(content: XhsEditorialContent, measure: Me
   file.title = "左对齐大标题 · 数字信息行";
   const page = file.pages[0];
   page.name = file.title;
-  page.background = { type: "solid", color: fromHex("#FFF9F0")! };
+  delete page.background;
   const nodes: Node[] = [];
   if (tag1) {
     const width = Math.min(420, Math.ceil(measure(primary, tag1.size, 700) + 48));

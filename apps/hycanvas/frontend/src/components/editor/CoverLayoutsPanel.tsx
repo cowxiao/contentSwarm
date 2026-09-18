@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { requestContentSwarmMaterials, type ContentSwarmGallery, type ContentSwarmMaterial } from "@/lib/managedAuth";
 import { imageAssets } from "@/lib/assetProvider";
 import { browserEditorialMeasure, buildXhsEditorialCover, readXhsEditorialContent, xhsEditorialDefault } from "@/lib/xhsEditorialCover";
+import { buildPersonalizedCoverLayout, personalizedCoverLayouts } from "@/lib/personalizedCoverLayouts";
 
 function BackgroundTile({ item, selected, disabled, onSelect }: { item: ContentSwarmMaterial; selected: boolean; disabled: boolean; onSelect: () => void }) {
   const [preview, setPreview] = useState("");
@@ -28,7 +29,7 @@ function BackgroundTile({ item, selected, disabled, onSelect }: { item: ContentS
   </button>;
 }
 
-function LayoutPreview({ file }: { file: DesignFile }) {
+function LayoutPreview({ file, transparent = false }: { file: DesignFile; transparent?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const context = ref.current?.getContext("2d");
@@ -41,7 +42,14 @@ function LayoutPreview({ file }: { file: DesignFile }) {
     draw();
     return unsubscribe;
   }, [file]);
-  return <canvas ref={ref} width={216} height={288} className="mx-auto h-auto w-full max-w-40 rounded-md" aria-label={`${file.title}预览`} />;
+  return <div className="mx-auto w-full max-w-40 overflow-hidden rounded-md" style={transparent ? {
+    backgroundColor: "#64748b",
+    backgroundImage: "linear-gradient(45deg, #475569 25%, transparent 25%), linear-gradient(-45deg, #475569 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #475569 75%), linear-gradient(-45deg, transparent 75%, #475569 75%)",
+    backgroundPosition: "0 0, 0 8px, 8px -8px, -8px 0",
+    backgroundSize: "16px 16px",
+  } : undefined}>
+    <canvas ref={ref} width={216} height={288} className="block h-auto w-full" aria-label={`${file.title}预览`} />
+  </div>;
 }
 
 export function CoverLayoutsPanel() {
@@ -62,6 +70,7 @@ export function CoverLayoutsPanel() {
   const [photoTarget, setPhotoTarget] = useState<"top" | "bottom">("top");
   const [styleCategory, setStyleCategory] = useState<"全部" | "标题" | "副标题">("全部");
   const [stylePage, setStylePage] = useState(1);
+  const [personalizedGroup, setPersonalizedGroup] = useState<"template-1" | "template-3" | "template-4" | "curated">("template-1");
   const [selecting, setSelecting] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [editorialPreview, setEditorialPreview] = useState<DesignFile | null>(null);
@@ -126,9 +135,15 @@ export function CoverLayoutsPanel() {
   const visibleStyles = useMemo(() => styles.slice((stylePage - 1) * 8, stylePage * 8), [styles, stylePage]);
   const beforeAfterFile = useMemo(() => buildBeforeAfterCover(background, bottomBackground), [background, bottomBackground]);
   const options = useMemo(() => [
-    ...visibleStyles.map((style) => ({ id: style.id, name: style.name, description: `${style.category}样式 · 文字与底色可编辑`, file: buildCoverLayout("quote", background, 0.95, composition, titleComposition, "photo-center", style.id) })),
+    ...visibleStyles.map((style) => ({ id: style.id, name: style.name, description: `透明底 · ${style.category}与装饰可编辑`, file: buildCoverLayout("quote", background, 0.95, composition, titleComposition, "photo-center", style.id) })),
     ...coverLayouts.map((layout) => ({ ...layout, file: buildCoverLayout(layout.id, background, 0.95, composition, titleComposition, "photo-center") })),
   ], [background, composition, titleComposition, visibleStyles]);
+  const personalizedOptions = useMemo(() => personalizedCoverLayouts
+    .filter((layout) => {
+      const curated = ["staircase", "center-focus", "diagonal"].includes(layout.composition);
+      return personalizedGroup === "curated" ? curated : !curated && layout.family === personalizedGroup;
+    })
+    .map((layout) => ({ ...layout, file: buildPersonalizedCoverLayout(layout) })), [personalizedGroup]);
   return (
     <div className="space-y-3">
       <p className="text-xs leading-5 text-neutral-500">自动组合可编辑元素。左对齐大标题模板应用在当前封面，其他模板生成新页面；完成后可通过顶部菜单“保存为模板”重复使用。</p>
@@ -180,7 +195,7 @@ export function CoverLayoutsPanel() {
           if (count) { useEditor.getState().fitToScreen(); toast.success("已生成装修前后对比封面，可替换图片并编辑文字"); }
           else toast.error("当前设计不可编辑，无法生成封面");
         }}>
-          <LayoutPreview file={beforeAfterFile} />
+          <LayoutPreview file={beforeAfterFile} transparent />
           <div className="mt-2 text-sm font-semibold text-neutral-800">装修前后对比</div>
           <p className="mt-1 text-xs leading-5 text-neutral-500">上下双图、斜向黄色笔刷、白字黑色粗描边。先选上图和下图，再生成封面。</p>
         </button>
@@ -191,13 +206,35 @@ export function CoverLayoutsPanel() {
       </div>
       {editorialPreview && <div className="rounded-xl border border-brand-300 bg-brand-50 p-2">
         <button type="button" className="w-full text-start" onClick={() => void applyEditorialTemplate()} aria-label="应用左对齐大标题 · 数字信息行模板">
-          <LayoutPreview file={editorialPreview} />
+          <LayoutPreview file={editorialPreview} transparent />
           <span className="mt-2 block text-sm font-semibold">左对齐大标题 · 数字信息行</span>
           <span className="block text-xs text-neutral-600">在当前封面排版，保留底图和独立素材</span>
         </button>
         <button type="button" className="mt-2 rounded-md border border-brand-300 px-2 py-1 text-xs text-brand-ink" onClick={() => void applyEditorialTemplate()}>重新排版（保留文案，恢复默认位置和字号）</button>
       </div>}
       {editorialPreviewError && <p role="alert" className="text-xs text-red-600">模板预览失败：{editorialPreviewError}</p>}
+      <div className="space-y-2 rounded-xl border border-brand-200 bg-brand-50/40 p-2">
+        <div className="flex items-center justify-between"><span className="text-sm font-semibold">基于你的模板</span><span className="text-xs text-neutral-500">15 个位置 · 3 个精选</span></div>
+        <p className="text-xs leading-5 text-neutral-500">透明底，可叠加在任意底图上；主体文字保持可编辑，模板3的底部城市说明固定在原位。</p>
+        <div className="grid grid-cols-4 gap-1" aria-label="个性化模板分类">
+          {([[
+            "template-1", "模板1",
+          ], ["template-3", "模板3"], ["template-4", "模板4"], ["curated", "精选"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={personalizedGroup === value} onClick={() => setPersonalizedGroup(value)} className={`rounded-md px-1 py-1.5 text-xs ${personalizedGroup === value ? "bg-surface text-brand-ink shadow-sm" : "text-neutral-600"}`}>{label}</button>)}
+        </div>
+        <div className="grid grid-cols-2 gap-2">{personalizedOptions.map((layout) => (
+          <button key={layout.id} type="button" aria-label={`生成${layout.name}`} className="min-w-0 rounded-xl border border-neutral-200 bg-surface p-2 text-start hover:border-brand-400 focus-visible:outline-2 focus-visible:outline-brand-400" onClick={() => {
+            const count = useEditor.getState().importPagesFrom(layout.file, [0], { matchTheme: false, preservePageSize: true });
+            if (count) {
+              useEditor.getState().fitToScreen();
+              toast.success(`已生成${layout.name}，透明底和文字均可继续编辑`);
+            } else toast.error("当前设计不可编辑，无法生成封面");
+          }}>
+            <LayoutPreview file={layout.file} transparent />
+            <div className="mt-2 text-xs font-semibold text-neutral-800">{layout.name}</div>
+            <p className="mt-1 text-xs leading-4 text-neutral-500">{layout.description}</p>
+          </button>
+        ))}</div>
+      </div>
       <div className="grid grid-cols-2 gap-2">{options.map((layout) => (
         <button key={layout.id} type="button" disabled={selecting} aria-label={`生成${layout.name}`} className="min-w-0 rounded-xl border border-neutral-200 bg-neutral-50 p-2 text-start hover:border-brand-400 focus-visible:outline-2 focus-visible:outline-brand-400" onClick={() => {
           const count = useEditor.getState().importPagesFrom(layout.file, [0], { matchTheme: false, preservePageSize: true });
@@ -207,7 +244,7 @@ export function CoverLayoutsPanel() {
           }
           else toast.error("当前设计不可编辑，无法生成封面");
         }}>
-          <LayoutPreview file={layout.file} />
+          <LayoutPreview file={layout.file} transparent />
           <div className="mt-2 text-xs font-semibold text-neutral-800">{layout.name}</div>
           <p className="mt-1 text-xs leading-4 text-neutral-500">{layout.description}</p>
         </button>
