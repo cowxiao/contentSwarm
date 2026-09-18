@@ -108,7 +108,11 @@ class WorkflowDefinitionPolicy:
                 raise ValueError(f"不支持的工作流节点类型: {node.get('type')}")
 
         cls._validate_dag(ids, edges)
-        joint = definition.get("selection_policy") in {"agent_skill_v1", "blueprint_first_v1"}
+        joint = definition.get("selection_policy") in {
+            "agent_skill_v1",
+            "blueprint_first_v1",
+            "modular_viral_author_v1",
+        }
         cls._validate_v3_nodes(node_by_id, catalog, joint=joint, price_recovery=bool(definition.get("price_recovery")))
         cls._validate_v3_control_flow(edges, joint=joint, price_recovery=bool(definition.get("price_recovery")))
         cls._validate_revision_routes(definition.get("revision_routes") or [], node_by_id)
@@ -137,8 +141,12 @@ class WorkflowDefinitionPolicy:
 
     @classmethod
     def _validate_v3_nodes(
-        cls, node_by_id: dict[str, dict[str, Any]], catalog: WorkflowCatalog | None,
-        *, joint: bool = False, price_recovery: bool = False,
+        cls,
+        node_by_id: dict[str, dict[str, Any]],
+        catalog: WorkflowCatalog | None,
+        *,
+        joint: bool = False,
+        price_recovery: bool = False,
     ) -> None:
         expected = 29 if joint and price_recovery else 25 if joint else 26
         if len(node_by_id) != expected:
@@ -205,20 +213,33 @@ class WorkflowDefinitionPolicy:
         if joint:
             removed = {"collect_viral_candidates", "select_viral_reference"}
             required = {edge for edge in required if not set(edge) & removed}
-            required.update({
-                ("normalize_evidence", "prepare_strategy_candidates"),
-                ("prepare_strategy_candidates", "select_creation_strategy"),
-                *((node, "merge_research_evidence") for node in (
-                    "collect_business_rule_evidence", "collect_price_evidence", "collect_compliance_evidence"
-                )),
-            })
+            required.update(
+                {
+                    ("normalize_evidence", "prepare_strategy_candidates"),
+                    ("prepare_strategy_candidates", "select_creation_strategy"),
+                    *(
+                        (node, "merge_research_evidence")
+                        for node in (
+                            "collect_business_rule_evidence",
+                            "collect_price_evidence",
+                            "collect_compliance_evidence",
+                        )
+                    ),
+                }
+            )
         if price_recovery:
             bypass = ("select_creation_strategy", "lock_creation_strategy")
             if bypass in edge_set:
                 raise ValueError("不得绕过报价补证直接锁定策略")
             required.remove(bypass)
-            chain = ["select_creation_strategy", "research_strategy_prices", "confirm_strategy_prices",
-                     "merge_strategy_prices", "reselect_creation_strategy", "lock_creation_strategy"]
+            chain = [
+                "select_creation_strategy",
+                "research_strategy_prices",
+                "confirm_strategy_prices",
+                "merge_strategy_prices",
+                "reselect_creation_strategy",
+                "lock_creation_strategy",
+            ]
             required.update(zip(chain, chain[1:]))
         if not required <= edge_set:
             raise ValueError("V3.7 工作流缺少策略锁定、并发调研汇总、爆款选择或固定回修链路")

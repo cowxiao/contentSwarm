@@ -722,6 +722,32 @@ def test_body_number_validation_ignores_line_leading_sequence_markers_only():
     assert exc_info.value.code == "unsupported_number"
 
 
+def test_body_number_validation_ignores_keycap_emoji_but_blocks_factual_numbers():
+    payload = deepcopy(VALID_PAYLOADS["ContentDraftResultV1"])
+    payload["body"] = "1️⃣ 先看施工范围\n2⃣ 再核对材料\n3️⃣ 最后确认报价"
+
+    validate_content_node_result("ContentDraftResultV1", payload, DOMAIN_CONTEXT)
+
+    payload["body"] += "，另收 99 元"
+    with pytest.raises(ContractDomainValidationError) as exc_info:
+        validate_content_node_result("ContentDraftResultV1", payload, DOMAIN_CONTEXT)
+
+    assert exc_info.value.code == "unsupported_number"
+
+
+def test_generated_body_length_is_checked_before_node_completion():
+    payload = {
+        "title": {"text": "真实施工说明", "formula_code": "T1", "evidence_ids": ["e-title"]},
+        "outline": deepcopy(VALID_PAYLOADS["OutlineResultV1"]),
+        "draft": {**deepcopy(VALID_PAYLOADS["ContentDraftResultV1"]), "body": "真实施工说明。" * 100},
+    }
+
+    with pytest.raises(ContractDomainValidationError) as exc_info:
+        validate_content_node_result("GeneratedContentResultV1", payload, DOMAIN_CONTEXT)
+
+    assert exc_info.value.code == "body_length_out_of_range"
+
+
 def test_common_agent_input_requires_all_trace_and_lock_fields():
     payload = {
         "task_id": "task",

@@ -106,11 +106,31 @@ class GenerateContentPromptV1(StrictContract):
     channel_profile: dict[str, Any]
     persona_profile: dict[str, Any]
     runtime_config_snapshot: dict[str, Any]
+    expression_guidance: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None
     review_report: dict[str, Any] | None = None
     selected_title: dict[str, Any] | None = None
     content_outline: dict[str, Any] | None = None
     content_draft: dict[str, Any] | None = None
+
+
+class SemanticReviewPromptV1(StrictContract):
+    """已校验审核输入的模型视图，保留所有成稿、事实及选中参考蓝图。"""
+
+    review_scope: Literal["emoji", "expression", "full"]
+    channel_profile: dict[str, Any]
+    persona_profile: dict[str, Any]
+    content_brief: dict[str, Any]
+    strategy_snapshot: dict[str, Any]
+    selected_title: dict[str, Any]
+    content_outline: dict[str, Any]
+    content_draft: dict[str, Any]
+    validation_report: dict[str, Any]
+    channel_result: dict[str, Any]
+    persona_diff: dict[str, Any] | None = None
+    evidence_bundle: dict[str, Any]
+    runtime_config_snapshot: dict[str, Any] = Field(default_factory=dict)
+    expression_guidance: dict[str, Any] | None = None
 
 
 class AnalyzeContentValueInputV1(StrictContract):
@@ -375,6 +395,7 @@ class GenerateContentInputV1(StrictContract):
     channel_profile: dict[str, Any]
     persona_profile: dict[str, Any]
     runtime_config_snapshot: dict[str, Any]
+    expression_guidance: dict[str, Any] | None = None
     validation_report: dict[str, Any] | None = None
     review_report: dict[str, Any] | None = None
     selected_title: dict[str, Any] | None = None
@@ -438,6 +459,8 @@ class SemanticReviewInputV1(StrictContract):
     channel_result: dict[str, Any] = Field(min_length=1)
     persona_diff: dict[str, Any] | None = None
     evidence_bundle: dict[str, Any] = Field(min_length=1)
+    runtime_config_snapshot: dict[str, Any] = Field(default_factory=dict)
+    expression_guidance: dict[str, Any] | None = None
 
 
 class PlanVisualsInputV1(StrictContract):
@@ -449,6 +472,15 @@ class PlanVisualsInputV1(StrictContract):
     artifact_version: dict[str, Any] = Field(min_length=1)
     channel_profile: dict[str, Any]
     runtime_config_snapshot: dict[str, Any] = Field(default_factory=dict)
+    required_visual_intent: Literal[
+        "general",
+        "whole_house_quote",
+        "partial_renovation",
+        "craft_detail",
+        "case_result",
+    ] = "general"
+    required_source_asset_ids: list[str] = Field(default_factory=list)
+    allowed_visual_evidence_ids: list[str] = Field(default_factory=list)
 
     @field_validator("media_evidence_items")
     @classmethod
@@ -514,6 +546,7 @@ INPUT_CONTRACT_REGISTRY: dict[str, type[StrictContract]] = {
         PersonaStylePolishInputV1,
         GenerateContentInputV1,
         GenerateContentPromptV1,
+        SemanticReviewPromptV1,
         JointStrategyPromptV1,
         SemanticReviewInputV1,
         PlanVisualsInputV1,
@@ -805,6 +838,14 @@ class VisualPlanResultV1(StrictContract):
     risks: list[str]
     artifact_version_id: str
     evidence_ids: list[str]
+    visual_intent: Literal[
+        "general",
+        "whole_house_quote",
+        "partial_renovation",
+        "craft_detail",
+        "case_result",
+    ] = "general"
+    selection_reason: str = ""
 
 
 class CoverJobSubmissionResultV1(StrictContract):
@@ -923,6 +964,8 @@ class ContractDomainContext:
     visual_text_max_chars: dict[str, int] = field(default_factory=dict)
     allowed_visual_template_fields: dict[str, dict[str, int]] = field(default_factory=dict)
     required_visual_template_fields: dict[str, dict[str, int]] = field(default_factory=dict)
+    required_visual_intent: str | None = None
+    required_modular_review_codes: frozenset[str] = frozenset()
 
     @classmethod
     def from_node_input(cls, node_input: ContentAgentNodeInputV1) -> ContractDomainContext:
@@ -1075,6 +1118,8 @@ class ContractDomainContext:
                 for label, constraints in (locks.get("required_visual_template_fields") or {}).items()
                 if isinstance(constraints, dict)
             },
+            required_visual_intent=locks.get("required_visual_intent"),
+            required_modular_review_codes=frozenset(locks.get("required_modular_review_codes") or []),
             viral_candidate_ids=frozenset(
                 str(item["id"])
                 for item in (viral_candidate_collection or {}).get("evidence_items") or []
@@ -1184,8 +1229,9 @@ def _validate_formula_lexicon_usage(result: GeneratedContentResultV1, context: C
 
 
 def _validate_numbers(text: str, context: ContractDomainContext, field_path: str, usage: str) -> None:
-    # 行首顺序编号只是结构导航，不是事实数字。正文中的其他数字仍必须有证据。
-    factual_text = re.sub(r"(?m)^\s*\d{1,2}[.、）)]\s*", "", text)
+    # 行首顺序编号与数字键帽 Emoji 只是导航，不是事实数字。
+    factual_text = re.sub(r"[0-9]\ufe0f?\u20e3", "", text)
+    factual_text = re.sub(r"(?m)^\s*\d{1,2}[.、）)]\s*", "", factual_text)
     numbers = set(re.findall(r"(?<![A-Za-z])\d+(?:\.\d+)?", factual_text))
     allowed = context.allowed_numbers_by_usage.get(usage, context.allowed_numbers)
     unknown = sorted(numbers - set(allowed))
@@ -1650,14 +1696,16 @@ def validate_content_node_result(
             expected = tuple(text_without_emoji_spacing(part) for part in context.persona_repair_middle)
             if middle != expected:
                 raise ContractDomainValidationError(
-                    "persona_repair_changed_middle", "draft.body",
+                    "persona_repair_changed_middle",
+                    "draft.body",
                     "首尾人设回修只能改首段和末段；中间各段必须逐字保留、保持顺序和分段，仅允许调整 Emoji 和空格",
                 )
         if context.emoji_repair_body is not None:
             _require_equal(result.title.text, context.locked_title, "title.text")
             if text_without_emoji_spacing(result.draft.body) != text_without_emoji_spacing(context.emoji_repair_body):
                 raise ContractDomainValidationError(
-                    "emoji_repair_changed_text", "draft.body",
+                    "emoji_repair_changed_text",
+                    "draft.body",
                     "仅表情回修不得改动原文字、数字、单位、标点和顺序，只调整 Emoji 和空格",
                 )
         # 同一错误引用可能出现在多个段落；一次反馈全部位置，避免逐处消耗纠错额度。
@@ -1701,6 +1749,13 @@ def validate_content_node_result(
         _validate_outline_calling_contract(result.outline, context)
         _require_equal(result.draft.body_formula_code, context.locked_body_formula_code, "draft.body_formula_code")
         _validate_numbers("\n".join([result.draft.body, *result.draft.topics]), context, "draft.body", "body")
+        if len(result.draft.body) > 650:
+            raise ContractDomainValidationError(
+                "body_length_out_of_range",
+                "draft.body",
+                f"draft.body 当前 {len(result.draft.body)} 字符，最多 650 字符（含换行和 Emoji）；"
+                "压缩重复说明，不删除锁定结构和有据事实",
+            )
     elif isinstance(result, PersonaPolishResultV1):
         for index, item in enumerate(result.preserved_fact_checks):
             _validate_evidence_ids([item.evidence_id], "body", context, f"preserved_fact_checks.{index}.evidence_id")
@@ -1710,7 +1765,12 @@ def validate_content_node_result(
                 )
         _validate_numbers(result.polished_body, context, "polished_body", "body")
     elif isinstance(result, ContentReviewResultV1):
-        if context.require_emoji_review or context.require_persona_review or context.require_composition_review:
+        if (
+            context.require_emoji_review
+            or context.require_persona_review
+            or context.require_composition_review
+            or context.required_modular_review_codes
+        ):
             required = set()
             if context.require_emoji_review:
                 required.update({"EMOJI_COVERAGE", "EMOJI_APPROPRIATENESS", "EMOJI_RESTRICTIONS"})
@@ -1718,16 +1778,20 @@ def validate_content_node_result(
                 required.update({"PERSONA_OPENING", "PERSONA_CLOSING", "PERSONA_GROUNDING"})
             if context.require_composition_review:
                 required.update({"CREATION_TYPE_ALIGNMENT", "COMPOSITION_ALIGNMENT"})
+            required.update(context.required_modular_review_codes)
             missing = required - {item.code for item in result.checks}
             if missing:
                 raise ContractDomainValidationError(
-                    "emoji_review_missing", "checks", "必须逐项审核表情与人设并记录结果: " + ", ".join(sorted(missing))
+                    "required_review_missing",
+                    "checks",
+                    "必须逐项审核表情、人设和冻结规则并记录结果: " + ", ".join(sorted(missing)),
                 )
             for index, item in enumerate(result.checks):
                 if item.code in required and item.status == "warning":
                     raise ContractDomainValidationError(
-                        "emoji_review_status", f"checks.{index}.status",
-                        "表达检查必须明确 passed 或 blocked，不以 warning 放行",
+                        "emoji_review_status",
+                        f"checks.{index}.status",
+                        "必选审核项必须明确 passed 或 blocked，不以 warning 放行",
                     )
                 if item.code in required and item.status == "blocked" and (not item.suggestion or not item.location):
                     raise ContractDomainValidationError(
@@ -1737,6 +1801,14 @@ def validate_content_node_result(
             _validate_evidence_ids(item.evidence_ids, "any", context, f"checks.{index}.evidence_ids")
     elif isinstance(result, VisualPlanResultV1):
         _require_equal(result.artifact_version_id, context.artifact_version_id, "artifact_version_id")
+        if context.required_visual_intent:
+            _require_equal(result.visual_intent, context.required_visual_intent, "visual_intent")
+            if not result.selection_reason.strip():
+                raise ContractDomainValidationError(
+                    "visual_match_reason_missing",
+                    "selection_reason",
+                    "模块化视觉方案必须说明所选素材与正文主卖点的对应关系",
+                )
         if context.required_source_asset_ids and tuple(result.source_asset_ids) != context.required_source_asset_ids:
             raise ContractDomainValidationError(
                 "visual_source_locked",

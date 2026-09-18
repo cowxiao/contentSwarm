@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -30,7 +31,7 @@ from yuxi.content.model.formulas.selector import (
 from yuxi.content.model.rules.engine import CombinationMatcher, MatchRequest
 from yuxi.content.rules import brief_variable_map, canonical_brief_facts
 from yuxi.content.validation import ComplianceEngine, validate_numeric_evidence_coverage
-from yuxi.content.validators import validate_content
+from yuxi.content.validators import validate_content, validate_modular_content
 from yuxi.content.v3.body_calling import get_decoration_body_calling, get_decoration_body_calling_source
 from yuxi.content.industry_matrix import resolve_industry_formula
 from yuxi.content.v3.formula_lexicons import get_formula_lexicon_requirements
@@ -182,6 +183,184 @@ def _title_evidence_requirements(slot_mappings: list[dict[str, Any]]) -> list[di
         for mapping in slot_mappings
         if mapping.get("target_usage") == "title"
     ]
+
+
+def _expression_search_context(state: dict[str, Any]) -> list[str]:
+    variables = brief_variable_map(state.get("content_brief") or {})
+    values = []
+    for key in ("user_request", "scene", "project_type", "product", "pain", "owner_pain", "city", "area"):
+        value = _display_business_value(variables.get(key))
+        if value:
+            values.append(value[:160])
+    strategy = state.get("strategy_snapshot") or {}
+    for item in (strategy.get("body_formula") or {}, strategy.get("title_formula") or {}):
+        value = _display_business_value(item.get("name"))
+        if value:
+            values.append(value)
+    return list(dict.fromkeys(values))
+
+
+def _advantage_formula_section(strategy_snapshot: dict[str, Any]) -> str:
+    sections = list((strategy_snapshot.get("body_formula") or {}).get("structure_schema") or [])
+    for terms in (("优势", "服务", "做事"), ("人设", "身份")):
+        for section in sections:
+            if any(term in str(section) for term in terms):
+                return str(section)
+    if not sections:
+        raise ValueError("正文公式缺少可绑定优势资料的段落")
+    return str(sections[-1])
+
+
+async def load_expression_knowledge(state: dict[str, Any]) -> dict[str, Any]:
+    """并行检索 V5 绑定资料，并将事实与纯表达参考分开冻结。"""
+
+    policy = (state.get("runtime_config_snapshot") or {}).get("expression_knowledge_policy") or {}
+    sources = policy.get("sources") or []
+    if not sources:
+        return {"evidence_items": [], "citations": [], "expression_guidance": None}
+
+    from yuxi import knowledge_base
+
+    accessible_payload = await knowledge_base.get_databases_by_uid(state["uid"])
+    accessible = accessible_payload.get("databases") or []
+    by_name: dict[str, list[dict[str, Any]]] = {}
+    for item in accessible:
+        by_name.setdefault(str(item.get("name") or ""), []).append(item)
+    retrievers = knowledge_base.get_retrievers()
+    search_context = _expression_search_context(state)
+
+    async def retrieve(source: dict[str, Any]) -> dict[str, Any]:
+        name = str(source.get("name") or "").strip()
+        matches = by_name.get(name) or []
+        if len(matches) != 1:
+            raise ValueError(f"表达资料库“{name}”必须存在且当前用户只能访问一个同名库")
+        kb_id = str(matches[0].get("kb_id") or "")
+        target = retrievers.get(kb_id)
+        if target is None:
+            raise ValueError(f"表达资料库“{name}”尚未加载检索器")
+        query = " ".join(
+            dict.fromkeys(
+                [
+                    *(str(item).strip() for item in source.get("query_terms") or [] if str(item).strip()),
+                    *search_context,
+                ]
+            )
+        )[:800]
+        output = await target["retriever"](query)
+        if not isinstance(output, dict) or not isinstance(output.get("results"), list):
+            raise ValueError(f"表达资料库“{name}”返回了无效检索结果")
+        max_chunks = int(source.get("max_chunks") or 2)
+        max_chars = int(source.get("max_chars_per_chunk") or 1200)
+        chunks = []
+        for item in output["results"][:max_chunks]:
+            content = str(item.get("content") or "").strip()
+            if not content:
+                continue
+            metadata = dict(item.get("metadata") or {})
+            chunks.append(
+                {
+                    "chunk_id": str(item.get("id") or ""),
+                    "file_id": str(item.get("file_id") or ""),
+                    "document_name": str(metadata.get("source") or item.get("file_id") or ""),
+                    "content": content[:max_chars],
+                }
+            )
+        if policy.get("required") is True and not chunks:
+            raise ValueError(f"表达资料库“{name}”没有召回可用内容")
+        return {
+            "kb_id": kb_id,
+            "name": name,
+            "role": str(source.get("role") or ""),
+            "usage": str(source.get("usage") or "style_reference"),
+            "query": query,
+            "chunks": chunks,
+        }
+
+    loaded = await asyncio.gather(*(retrieve(source) for source in sources))
+    evidence_items: list[dict[str, Any]] = []
+    citations: list[str] = []
+    style_sources: list[dict[str, Any]] = []
+    strategy_snapshot = state.get("strategy_snapshot") or {}
+    body_formula_code = str((strategy_snapshot.get("body_formula") or {}).get("code") or "")
+    formula_section = _advantage_formula_section(strategy_snapshot)
+    for source in loaded:
+        if source["usage"] == "body_evidence":
+            for chunk in source["chunks"]:
+                source_hash = hashlib.sha256(chunk["content"].encode("utf-8")).hexdigest()
+                evidence_key = f"{source['kb_id']}:{chunk['chunk_id']}:{source_hash}"
+                evidence_id = f"ev_{hashlib.sha256(evidence_key.encode()).hexdigest()[:16]}"
+                evidence_items.append(
+                    {
+                        "id": evidence_id,
+                        "variable_codes": ["advantages"],
+                        "value": chunk["content"],
+                        "source_type": "knowledge_base",
+                        "source_id": chunk["chunk_id"],
+                        "source_version": source_hash,
+                        "verified_status": "retrieved",
+                        "allowed_usage": ["body"],
+                        "risk_level": "normal",
+                        "source_hash": source_hash,
+                        "metadata": {
+                            "material_type": "brand_fact",
+                            "knowledge_base_id": source["kb_id"],
+                            "knowledge_base_name": source["name"],
+                            "document_id": chunk["file_id"],
+                            "document_name": chunk["document_name"],
+                            "chunk_id": chunk["chunk_id"],
+                            "writing_ready": True,
+                            "integration_instruction": (
+                                "只选择与本次场景和核心痛点最相关的二至三项有据优势；"
+                                "正文前两个自然段用真实身份、做事特点和可信依据建立身份、价值、证据三层人设，"
+                                f"再在“{formula_section}”按需展开，不得机械罗列或扩大为承诺"
+                            ),
+                            "relevance_reason": "用户指定该知识库用于创作时提炼当前工长的真实优势",
+                            "body_formula_code": body_formula_code,
+                            "formula_section": formula_section,
+                            "persona_opening_layers": ["identity", "value", "evidence"],
+                            "persona_opening_window_paragraphs": 2,
+                            "advantage_selection": {
+                                "min": 2,
+                                "max": 3,
+                                "match_current_pain": True,
+                            },
+                        },
+                    }
+                )
+                citations.append(chunk["chunk_id"])
+        else:
+            style_sources.append(source)
+
+    guidance = {
+        "schema_version": 1,
+        "sources": style_sources,
+        "usage_rules": [
+            "只改变措辞、语气、句式、换行、清单与 Emoji，不把表达样例当作本次业务事实",
+            "不得复制资料中的人物、城市、数字、报价、项目经历、客户反馈或承诺",
+            "与锁定爆款结构、公式、渠道或用户要求冲突时，服从锁定规则和真实 Evidence",
+        ],
+    }
+    canonical = json.dumps(guidance, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    guidance["snapshot_hash"] = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    await append_run_stream_event(
+        state["run_id"],
+        "content.expression_knowledge.loaded",
+        {
+            "task_id": state["task_id"],
+            "snapshot_hash": guidance["snapshot_hash"],
+            "sources": [
+                {
+                    "knowledge_base_id": item["kb_id"],
+                    "name": item["name"],
+                    "role": item["role"],
+                    "count": len(item["chunks"]),
+                }
+                for item in loaded
+            ],
+        },
+        thread_id=state["task_id"],
+    )
+    return {"evidence_items": evidence_items, "citations": citations, "expression_guidance": guidance}
 
 
 class V3DeterministicNodeHandler:
@@ -697,6 +876,16 @@ class V3DeterministicNodeHandler:
             "channel_profile_version_id": task.channel_profile_version_id,
             "compliance_policy_version_ids": [item["id"] for item in policies],
         }
+        from yuxi.content.v3.modular_rules import MODULAR_WORKFLOW_IDS, build_modular_rule_bundle
+
+        if task.workflow_version_id in MODULAR_WORKFLOW_IDS:
+            runtime["content_rule_bundle"] = build_modular_rule_bundle(state.get("content_brief") or {})
+        workflow = await repo.get_workflow(task.workflow_version_id)
+        expression_policy = (
+            deepcopy((workflow.definition_json or {}).get("expression_knowledge_policy")) if workflow else None
+        )
+        if expression_policy:
+            runtime["expression_knowledge_policy"] = expression_policy
         task.runtime_config_snapshot_json = runtime
         return {
             "schema_version": 3,
@@ -956,10 +1145,16 @@ class V3DeterministicNodeHandler:
     @staticmethod
     async def _merge_research_evidence(*, db: AsyncSession, state: dict[str, Any], node_run_id: str) -> dict[str, Any]:
         del db, node_run_id
+        expression_materials = await load_expression_knowledge(state)
         collections = [
             state.get("business_rule_evidence_collection") or {},
             state.get("price_evidence_collection") or {},
             state.get("compliance_evidence_collection") or {},
+            {
+                "evidence_items": expression_materials["evidence_items"],
+                "citations": expression_materials["citations"],
+                "unresolved_questions": [],
+            },
         ]
         evidence_items = [item for collection in collections for item in collection.get("evidence_items") or []]
         excluded_high_risk = [
@@ -1015,6 +1210,8 @@ class V3DeterministicNodeHandler:
             for item in excluded_high_risk
         )
         task = state.get("runtime_config_snapshot") or {}
+        if task.get("creation_mode") != "viral_rewrite":
+            raise ValueError("内容证据合并只支持爆款仿写")
         formula = state.get("formula_selection_snapshot") or {}
         result = validate_content_node_result(
             "EvidenceCollectionResultV1",
@@ -1036,12 +1233,15 @@ class V3DeterministicNodeHandler:
                     "body_formula_code": formula.get("selected_body_formula_code"),
                     "artifact_version_id": None,
                 },
-                locked_values={"creation_mode": task.get("creation_mode", "original")},
+                locked_values={"creation_mode": "viral_rewrite"},
                 strategy_snapshot=state.get("strategy_snapshot") or {},
                 viral_candidate_collection=state.get("viral_candidate_collection") or {},
             ),
         )
-        return {"evidence_collection": result.model_dump(mode="json")}
+        output = {"evidence_collection": result.model_dump(mode="json")}
+        if expression_materials["expression_guidance"] is not None:
+            output["expression_guidance"] = expression_materials["expression_guidance"]
+        return output
 
     @staticmethod
     async def _prepare_formula_selection(
@@ -1379,6 +1579,27 @@ class V3DeterministicNodeHandler:
             channel_profile=state.get("channel_profile") or {},
             policies=state.get("compliance_policies") or [],
         )
+        rule_bundle = (state.get("runtime_config_snapshot") or {}).get("content_rule_bundle") or {}
+        platform_rules = (rule_bundle.get("runtime_rules") or {}).get("viral-platform-expression") or {}
+        for source, replacement in sorted(
+            (platform_rules.get("forbidden_replacements") or {}).items(),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        ):
+            for location in ("title", "body"):
+                before = result[location]
+                after = before.replace(source, replacement)
+                if after == before:
+                    continue
+                result[location] = after
+                result["replacement_diffs"].append(
+                    {
+                        "location": location,
+                        "before": before,
+                        "after": after,
+                        "rule_id": "viral-platform-expression.v1",
+                    }
+                )
         title["text"] = result["title"]
         draft["body"] = result["body"]
         draft["topics"] = result["topics"]
@@ -1412,28 +1633,43 @@ class V3DeterministicNodeHandler:
                 }
             )
             report["status"] = "blocked"
-        mechanical_markers = (
-            "旧况很典型",
-            "关键数据先摊开",
-            "先说背景",
-            "再看过程",
-            "最后看结果",
-            "下面来说",
-            "接下来看看",
-        )
-        matched_mechanical_markers = [marker for marker in mechanical_markers if marker in body]
-        if matched_mechanical_markers:
-            report["checks"].append(
-                {
-                    "code": "MECHANICAL_META_EXPRESSION",
-                    "level": "error",
-                    "location": "body",
-                    "message": "正文包含暴露写作步骤的报幕式元话术",
-                    "evidence_ids": [],
-                    "matched_terms": matched_mechanical_markers,
-                }
+        rule_bundle = (state.get("runtime_config_snapshot") or {}).get("content_rule_bundle") or {}
+        if rule_bundle:
+            modular_checks = validate_modular_content(
+                title=(state.get("selected_title") or {}).get("text", ""),
+                body=body,
+                topics=draft.get("topics") or [],
+                draft=draft,
+                brief=state["content_brief"],
+                evidence_bundle=state["evidence_bundle"],
+                rule_bundle=rule_bundle,
             )
-            report["status"] = "blocked"
+            report["checks"].extend(modular_checks)
+            if any(item["level"] == "error" for item in modular_checks):
+                report["status"] = "blocked"
+        else:
+            mechanical_markers = (
+                "旧况很典型",
+                "关键数据先摊开",
+                "先说背景",
+                "再看过程",
+                "最后看结果",
+                "下面来说",
+                "接下来看看",
+            )
+            matched_mechanical_markers = [marker for marker in mechanical_markers if marker in body]
+            if matched_mechanical_markers:
+                report["checks"].append(
+                    {
+                        "code": "MECHANICAL_META_EXPRESSION",
+                        "level": "error",
+                        "location": "body",
+                        "message": "正文包含暴露写作步骤的报幕式元话术",
+                        "evidence_ids": [],
+                        "matched_terms": matched_mechanical_markers,
+                    }
+                )
+                report["status"] = "blocked"
         used_body_evidence = {
             evidence_id
             for paragraph in draft.get("paragraph_evidence") or []

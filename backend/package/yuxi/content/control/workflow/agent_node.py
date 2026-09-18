@@ -215,23 +215,33 @@ class AgentNodeHandler:
         if node["id"] == "research_strategy_prices" and not (
             (state.get("joint_strategy_decision") or {}).get("price_research_questions")
         ):
-            return {"strategy_price_evidence_collection": {
-                "evidence_items": [], "citations": [], "unresolved_questions": [],
-                "skipped": True, "skip_reason": "策略未发现需要检索的报价缺口",
-            }}
-        if node["id"] == "reselect_creation_strategy" and (
-            state["strategy_price_evidence_collection"].get("skipped")
-        ):
-            return {"joint_strategy_decision": state["joint_strategy_decision"],
-                    "strategy_selection": state["strategy_selection"]}
+            return {
+                "strategy_price_evidence_collection": {
+                    "evidence_items": [],
+                    "citations": [],
+                    "unresolved_questions": [],
+                    "skipped": True,
+                    "skip_reason": "策略未发现需要检索的报价缺口",
+                }
+            }
+        if node["id"] == "reselect_creation_strategy" and (state["strategy_price_evidence_collection"].get("skipped")):
+            return {
+                "joint_strategy_decision": state["joint_strategy_decision"],
+                "strategy_selection": state["strategy_selection"],
+            }
         if node["id"] == "collect_price_evidence" and (
             state.get("strategy_price_evidence_collection") is not None
             and not state["strategy_price_evidence_collection"].get("skipped")
         ):
-            return {"price_evidence_collection": {
-                "evidence_items": [], "citations": [], "unresolved_questions": [],
-                "skipped": True, "skip_reason": "策略锁定前已完成本次价格检索，证据已合并",
-            }}
+            return {
+                "price_evidence_collection": {
+                    "evidence_items": [],
+                    "citations": [],
+                    "unresolved_questions": [],
+                    "skipped": True,
+                    "skip_reason": "策略锁定前已完成本次价格检索，证据已合并",
+                }
+            }
 
         research_result_fields = {
             "collect_business_rule_evidence": "business_rule_evidence_collection",
@@ -267,26 +277,6 @@ class AgentNodeHandler:
                     }
                 }
 
-        creation_mode = (state.get("runtime_config_snapshot") or {}).get("creation_mode", "original")
-        if node["id"] == "collect_viral_candidates" and creation_mode != "viral_rewrite":
-            return {
-                "viral_candidate_collection": {
-                    "evidence_items": [],
-                    "citations": [],
-                    "unresolved_questions": [],
-                }
-            }
-        if node["id"] == "select_viral_reference" and creation_mode != "viral_rewrite":
-            return {
-                "viral_reference_selection": {
-                    "selected_candidate_id": None,
-                    "selection_reason": "原创模式跳过爆款参考选择",
-                    "selection_basis": {},
-                    "reference_blueprint": None,
-                    "unresolved_questions": [],
-                }
-            }
-
         evidence_bundle = state.get("evidence_bundle") or {"items": []}
         evidence_hash = str(evidence_bundle.get("bundle_hash") or "")
         if not evidence_hash:
@@ -310,7 +300,7 @@ class AgentNodeHandler:
             "require_persona_review": node["id"] == "semantic_review",
             "require_composition_review": node["id"] == "semantic_review"
             and bool((state.get("strategy_snapshot") or {}).get("direction_blueprint")),
-            "creation_mode": (state.get("runtime_config_snapshot") or {}).get("creation_mode", "original"),
+            "creation_mode": "viral_rewrite",
             "selected_title": (state.get("selected_title") or {}).get("text"),
             "source_asset_ids": [
                 *[item["id"] for item in media if item.get("id")],
@@ -320,8 +310,16 @@ class AgentNodeHandler:
             "visual_plan_hash": (state.get("visual_plan") or {}).get("plan_hash"),
             "state_version": int(state.get("state_version") or 0),
         }
+        content_rule_bundle = (state.get("runtime_config_snapshot") or {}).get("content_rule_bundle") or {}
+        if content_rule_bundle:
+            locked_values["rule_bundle_hash"] = content_rule_bundle.get("bundle_hash")
+            if node["id"] == "semantic_review":
+                from yuxi.content.v3.modular_rules import modular_review_codes
+
+                locked_values["required_modular_review_codes"] = list(modular_review_codes(state))
         blocked_review_codes = {
-            item.get("code") for item in (state.get("review_report") or {}).get("checks", [])
+            item.get("code")
+            for item in (state.get("review_report") or {}).get("checks", [])
             if item.get("status") == "blocked"
         }
         if (
@@ -335,9 +333,13 @@ class AgentNodeHandler:
             node["id"] == "generate_content"
             and (state.get("validation_report") or {}).get("status") in {"passed", "warning"}
             and blocked_review_codes & {"PERSONA_OPENING", "PERSONA_CLOSING"}
-            and blocked_review_codes <= {
-                "PERSONA_OPENING", "PERSONA_CLOSING", "EMOJI_COVERAGE",
-                "EMOJI_APPROPRIATENESS", "EMOJI_RESTRICTIONS",
+            and blocked_review_codes
+            <= {
+                "PERSONA_OPENING",
+                "PERSONA_CLOSING",
+                "EMOJI_COVERAGE",
+                "EMOJI_APPROPRIATENESS",
+                "EMOJI_RESTRICTIONS",
             }
         ):
             paragraphs = [part.strip() for part in re.split(r"\n\s*\n", state["content_draft"]["body"]) if part.strip()]
@@ -345,6 +347,10 @@ class AgentNodeHandler:
         assembly_state = state
         if node["id"] == "plan_visuals":
             from yuxi.content.control.visual_template_fields import missing_required_template_fields
+            from yuxi.content.v3.modular_rules import derive_visual_intent
+
+            if content_rule_bundle:
+                locked_values["required_visual_intent"] = derive_visual_intent(state)
 
             limits: dict[str, int] = {}
             allowed_template_fields: dict[str, dict[str, int]] = {}
@@ -389,6 +395,12 @@ class AgentNodeHandler:
             viral_candidate_collection=state.get("viral_candidate_collection") or {},
         )
         required_skills = tuple(node["required_skills"])
+        if node["id"] == "generate_content" and "viral-author-core" in required_skills:
+            from yuxi.content.v3.modular_rules import select_modular_generation_skills
+
+            if not content_rule_bundle.get("bundle_hash"):
+                raise ValueError("模块化爆款仿写缺少冻结规则快照")
+            required_skills = select_modular_generation_skills(required_skills, assembly.payload)
         if node["output_contract"] in {"JointStrategyDecisionV1", "JointStrategyDecisionV2"}:
             domain_context = replace(domain_context, joint_strategy_input=assembly.payload)
             required_skills = (*required_skills, state["strategy_candidates"]["selection_skill"])

@@ -562,7 +562,7 @@ async def test_merge_research_excludes_unconfirmed_external_high_risk_evidence(m
     result = await V3DeterministicNodeHandler()._merge_research_evidence(
         db=SimpleNamespace(),
         state={
-            "runtime_config_snapshot": {"creation_mode": "original", "rule_version_id": "rules-v3"},
+            "runtime_config_snapshot": {"creation_mode": "viral_rewrite", "rule_version_id": "rules-v3"},
             "formula_selection_snapshot": {},
             "evidence_bundle": {"items": []},
             "business_rule_evidence_collection": {"evidence_items": []},
@@ -598,8 +598,11 @@ async def test_semantic_review_calls_agent_for_normal_first_draft(monkeypatch):
 
     node_run = SimpleNamespace(id="node-run-1")
     task = SimpleNamespace(
-        id="task-1", industry_pack_version_id="pack", channel_profile_version_id="channel",
-        persona_profile_version_id=None, rule_version_id="rules-v3",
+        id="task-1",
+        industry_pack_version_id="pack",
+        channel_profile_version_id="channel",
+        persona_profile_version_id=None,
+        rule_version_id="rules-v3",
     )
     user = SimpleNamespace(uid="user-1")
 
