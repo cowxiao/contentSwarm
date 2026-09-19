@@ -111,6 +111,13 @@ async def test_dangjia_endpoints_require_authentication(test_client):
     assert (await test_client.get(f"/api/dangjia/content/runs/{random_id}")).status_code == 401
 
 
+async def test_dangjia_media_route_is_public(test_client):
+    response = await test_client.get("/api/dangjia/content/media/cca_0123456789abcdef0123456789abcdef/1.png")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Dangjia media not found"
+
+
 async def test_dangjia_rejects_unknown_type_name(test_client, admin_headers):
     payload = _payload(f"pytest-{uuid.uuid4().hex[:12]}", _fake_images(1), type_name="未知类型")
     response = await test_client.post("/api/dangjia/content/tasks", json=payload, headers=admin_headers)

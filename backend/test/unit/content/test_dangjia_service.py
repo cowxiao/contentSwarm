@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from yuxi.services.dangjia_service import (
     DangjiaContentCreate,
@@ -49,8 +50,7 @@ def make_payload(
                 "typeName": type_name,
                 "quotationInfo": {"houseArea": "115平", "houseType": "三室二厅"},
                 "prices": [
-                    {"format": price_format, "content": f"{price_format}测试报价"}
-                    for price_format in price_formats
+                    {"format": price_format, "content": f"{price_format}测试报价"} for price_format in price_formats
                 ],
                 "mySite": "湖南省长沙市岳麓区梅溪湖街道金茂府",
             },
@@ -85,6 +85,14 @@ def test_form_values_map_quotation_and_prices():
     assert values["project_site"] == "湖南省长沙市岳麓区梅溪湖街道金茂府"
     assert values["content_tags"] == ["营销报价", "中式风格"]
     assert values["type_name"] == "施工报价"
+
+
+def test_create_payload_rejects_serial_number_longer_than_callback_contract():
+    payload = make_payload().model_dump(mode="json")
+    payload["serialNo"] = "S" * 33
+
+    with pytest.raises(ValidationError):
+        DangjiaContentCreate.model_validate(payload)
 
 
 def test_form_values_derive_required_fields_from_real_inputs():

@@ -17,10 +17,18 @@ from yuxi.content.v3.workflow import LEGACY_PLATFORM_WORKFLOW_V3_IDS
 from yuxi.repositories.content_cover_repository import ContentCoverRepository
 from yuxi.repositories.content_repository import ContentRepository
 from yuxi.repositories.agent_run_repository import TERMINAL_RUN_STATUSES, AgentRunRepository
+from yuxi.services.dangjia_callback_service import EXTERNAL_SOURCE, TerminalStatus, notify_dangjia_content_result
 from yuxi.services.run_queue_service import append_run_stream_event, clear_cancel_signal, has_cancel_signal
 from yuxi.storage.postgres.manager import pg_manager
 from yuxi.storage.postgres.models_business import User
 from yuxi.utils.logging_config import logger
+
+
+async def _notify_dangjia_terminal(task, *, run_id: str, terminal_status: TerminalStatus) -> None:
+    form_values = (getattr(task, "brief_json", None) or {}).get("form_values") or {}
+    if form_values.get("external_source") != EXTERNAL_SOURCE:
+        return
+    await notify_dangjia_content_result(task_id=task.id, run_id=run_id, terminal_status=terminal_status)
 
 
 async def _load_content_run(run_id: str):
@@ -133,6 +141,8 @@ async def process_content_run(ctx, run_id: str):
             error_type="content_configuration_missing",
             error_message="内容任务、工作流或规则版本不存在",
         )
+        if task is not None:
+            await _notify_dangjia_terminal(task, run_id=run_id, terminal_status="failed")
         return
     task_schema_version = int((task.runtime_config_snapshot_json or {}).get("schema_version") or 1)
     workflow_schema_version = int((workflow.definition_json or {}).get("schema_version") or 1)
@@ -143,6 +153,7 @@ async def process_content_run(ctx, run_id: str):
             error_type="content_legacy_task_read_only",
             error_message="旧版内容任务仅保留历史查询，Worker 只执行 V3 工作流",
         )
+        await _notify_dangjia_terminal(task, run_id=run_id, terminal_status="failed")
         return
     if task.workflow_version_id in LEGACY_PLATFORM_WORKFLOW_V3_IDS:
         await _set_content_run_status(
@@ -151,6 +162,7 @@ async def process_content_run(ctx, run_id: str):
             error_type="content_workflow_upgrade_required",
             error_message="旧版 V3 checkpoint 不会套用新版节点输入契约；请新建任务后生产",
         )
+        await _notify_dangjia_terminal(task, run_id=run_id, terminal_status="failed")
         return
 
     payload = run.input_payload or {}
@@ -363,6 +375,7 @@ async def process_content_run(ctx, run_id: str):
             {"status": "completed", "task_id": task.id},
             thread_id=task.id,
         )
+        await _notify_dangjia_terminal(task, run_id=run_id, terminal_status="completed")
     except (asyncio.CancelledError, InterruptedError):
         explicitly_cancelled = await has_cancel_signal(run_id)
         if not explicitly_cancelled:
@@ -400,6 +413,7 @@ async def process_content_run(ctx, run_id: str):
                 thread_id=task.id,
             )
             await append_run_stream_event(run_id, "end", {"status": "failed"}, thread_id=task.id)
+            await _notify_dangjia_terminal(task, run_id=run_id, terminal_status="failed")
             return
         async with pg_manager.get_async_session_context() as db:
             persisted_task = await ContentRepository(db).get_task(task.id, for_update=True)
@@ -414,6 +428,7 @@ async def process_content_run(ctx, run_id: str):
             error_message="内容运行已取消",
         )
         await append_run_stream_event(run_id, "end", {"status": "cancelled"}, thread_id=task.id)
+        await _notify_dangjia_terminal(task, run_id=run_id, terminal_status="cancelled")
     except Exception as exc:
         retryable = isinstance(
             exc,
@@ -464,6 +479,7 @@ async def process_content_run(ctx, run_id: str):
             thread_id=task.id,
         )
         await append_run_stream_event(run_id, "end", {"status": "failed"}, thread_id=task.id)
+        await _notify_dangjia_terminal(task, run_id=run_id, terminal_status="failed")
     finally:
         await clear_cancel_signal(run_id)
 
