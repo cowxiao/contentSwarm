@@ -111,7 +111,7 @@ class DangjiaImage(BaseModel):
 class DangjiaContentCreate(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    serialNo: str = Field(min_length=1, max_length=64)
+    serialNo: str = Field(min_length=1, max_length=32)
     persona: DangjiaPersona
     requirementType: DangjiaRequirementType
     tags: list[str] = Field(default_factory=list, max_length=20)
